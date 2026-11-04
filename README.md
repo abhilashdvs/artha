@@ -73,7 +73,9 @@ More sheet). Colours live as CSS variables in `src/app/globals.css`.
 
 ## Cloud sync & deployment
 
-- **Supabase** (project `artha`, Mumbai) stores your data when you sign in (Settings → Sign in to sync).
+- **Sign-in first:** the first screen anyone sees is a minimal ARTHA sign-in / sign-up page
+  ("Know your money. Own your future."). The app only appears once you're signed in (`AuthGate`).
+- **Supabase** (project `artha`, Mumbai) stores your data and handles sign-in.
   The browser keeps a working copy so the app is instant and works offline; changes are pushed
   automatically and the latest copy is pulled on open, focus and reconnect (`src/lib/sync.ts`).
   Demo data is never uploaded. Every table has Row Level Security — you can only read your own rows.
@@ -81,7 +83,7 @@ More sheet). Colours live as CSS variables in `src/app/globals.css`.
 - Setup: run `supabase/schema.sql` in the Supabase SQL editor, then set `NEXT_PUBLIC_SUPABASE_URL` and
   `NEXT_PUBLIC_SUPABASE_ANON_KEY` (the *publishable* key) in `.env.local` and in Vercel → Environment
   Variables. See `.env.example`. Add the Vercel URL under Supabase → Authentication → URL Configuration.
-- Without those variables the app runs fully local, exactly as before.
+- Without those variables the app runs fully local and ungated, exactly as before.
 
 ## Tech
 

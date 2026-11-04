@@ -119,6 +119,8 @@ export interface SyncStatus {
   error: string | null;
   /** set when the auth flow needs the user to choose a new password */
   recovering: boolean;
+  /** true once we know whether a session exists (avoids a sign-in flash on load) */
+  authReady: boolean;
 }
 
 let status: SyncStatus = {
@@ -128,6 +130,7 @@ let status: SyncStatus = {
   lastSynced: null,
   error: null,
   recovering: false,
+  authReady: !syncConfigured,
 };
 const listeners = new Set<() => void>();
 function setStatus(patch: Partial<SyncStatus>) {
@@ -389,14 +392,16 @@ export async function initSync(): Promise<boolean> {
   window.addEventListener("online", () => { lastPull = 0; refresh(); });
   setInterval(() => { if (userId) void flush(); }, 60_000);
 
-  const { data } = await c.auth.getSession();
+  const { data } = await c.auth.getSession().catch(() => ({ data: { session: null } }));
   const s = data.session;
   if (s) {
     lastPull = Date.now();
+    // set the email before marking auth ready so the app (not the sign-in screen) renders first
+    setStatus({ email: s.user.email ?? null });
     if (s.user.id !== userId) void link(s.user.id, s.user.email ?? null);
-    return true;
   }
-  return false;
+  setStatus({ authReady: true });
+  return Boolean(s);
 }
 
 // ── Auth actions (used by the Account card) ──────────────────

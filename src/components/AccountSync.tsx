@@ -3,14 +3,11 @@
 import { useState } from "react";
 import { formatDistanceToNow, parseISO } from "date-fns";
 import { Cloud, CloudOff, LogOut, RefreshCw } from "lucide-react";
-import {
-  sendPasswordReset, setNewPassword, signIn, signOut, signUp, syncNow, useSyncStatus,
-} from "@/lib/sync";
+import { setNewPassword, signOut, syncNow, useSyncStatus } from "@/lib/sync";
+import { AuthForm } from "./AuthScreen";
 import { useDemoMode } from "@/lib/hooks";
-import { Btn, Card, Field, Input } from "./ui";
+import { Btn, Card, Input } from "./ui";
 import { cn } from "@/lib/utils";
-
-type Mode = "signin" | "signup" | "reset";
 
 function errText(e: unknown): string {
   const msg = e instanceof Error ? e.message : String(e);
@@ -20,12 +17,10 @@ function errText(e: unknown): string {
   return msg;
 }
 
-/** Sign in / sign up / sync status — lives at the top of Settings. */
+/** Account + sync status — lives at the top of Settings. */
 export function AccountSync() {
   const s = useSyncStatus();
   const demo = useDemoMode();
-  const [mode, setMode] = useState<Mode>("signin");
-  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -121,81 +116,10 @@ export function AccountSync() {
     );
   }
 
-  // ── signed out ──
+  // ── signed out (normally unreachable: the AuthGate shows the sign-in screen) ──
   return (
     <Card>
-      <div className="mb-4 flex items-start gap-3">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent/10 text-accent">
-          <Cloud size={18} />
-        </span>
-        <div>
-          <h2 className="text-sm font-semibold text-ink">
-            {mode === "signup" ? "Create your account" : mode === "reset" ? "Reset your password" : "Sign in to sync"}
-          </h2>
-          <p className="text-xs text-muted">
-            Use Artha on your phone and laptop with the same data. Without signing in, data stays in this browser only.
-          </p>
-        </div>
-      </div>
-
-      <form
-        className="space-y-3"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (!email.includes("@")) return setError("Enter your email address.");
-          if (mode === "reset") {
-            return void run(async () => {
-              await sendPasswordReset(email);
-              setNotice("Check your inbox for a reset link.");
-            });
-          }
-          if (password.length < 8) return setError("Password must be at least 8 characters.");
-          void run(async () => {
-            if (mode === "signup") {
-              const { needsConfirmation } = await signUp(email, password);
-              if (needsConfirmation) setNotice("Almost done — open the confirmation link we emailed you, then sign in here.");
-            } else {
-              await signIn(email, password);
-            }
-            setPassword("");
-          });
-        }}
-      >
-        <Field label="Email">
-          <Input type="email" autoComplete="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
-        </Field>
-        {mode !== "reset" && (
-          <Field label="Password">
-            <Input
-              type="password"
-              autoComplete={mode === "signup" ? "new-password" : "current-password"}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-          </Field>
-        )}
-        {error && <p className="rounded-xl bg-danger/10 px-3 py-2 text-xs font-medium text-danger">{error}</p>}
-        {notice && <p className="rounded-xl bg-good/10 px-3 py-2 text-xs font-medium text-good">{notice}</p>}
-        <div className="flex flex-wrap items-center gap-3">
-          <Btn type="submit" disabled={busy}>
-            {busy ? "Please wait…" : mode === "signup" ? "Create account" : mode === "reset" ? "Send reset link" : "Sign in"}
-          </Btn>
-          {mode === "signin" ? (
-            <>
-              <button type="button" className="text-xs font-medium text-accent hover:underline" onClick={() => { setMode("signup"); setError(null); setNotice(null); }}>
-                New here? Create an account
-              </button>
-              <button type="button" className="text-xs text-muted hover:underline" onClick={() => { setMode("reset"); setError(null); setNotice(null); }}>
-                Forgot password?
-              </button>
-            </>
-          ) : (
-            <button type="button" className="text-xs font-medium text-accent hover:underline" onClick={() => { setMode("signin"); setError(null); setNotice(null); }}>
-              Back to sign in
-            </button>
-          )}
-        </div>
-      </form>
+      <AuthForm />
     </Card>
   );
 }
