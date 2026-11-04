@@ -47,5 +47,6 @@ only. Do NOT wire up Supabase or deploy unless the user explicitly asks.
 
 ## Git / GitHub
 
-- Repo: `github.com/abhilashdvs/artha` (personal account, pushed via the
-  `github-personal` SSH host alias). Never use the `GIT_TOKEN` env var (work org).
+- Repo: `github.com/abhilashdvs/artha` (private, personal account). On machines with the
+  `github-personal` SSH host alias use that; otherwise push over HTTPS with the `gh` CLI
+  logged in as `abhilashdvs`. Never use the `GIT_TOKEN` env var (work org).

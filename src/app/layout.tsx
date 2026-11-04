@@ -17,12 +17,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${inter.variable} font-sans antialiased`}>
-        <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+        <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
           <DbInit />
           <Sidebar />
-          {/* pb-36 on mobile clears the QuickAdd FAB (fixed bottom-20 + ~48px height ≈ 128px);
-              lg:pb-10 once the FAB drops to bottom-8 and the MobileNav is hidden */}
-          <main className="pb-36 lg:pb-10 lg:pl-60">
+          {/* pb-28 on mobile clears the bottom tab bar; the sidebar is w-56 on desktop */}
+          <main className="pb-28 lg:pb-10 lg:pl-56">
             <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">{children}</div>
           </main>
           <MobileNav />

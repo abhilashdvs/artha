@@ -1,300 +1,330 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import {
-  useAccounts, useBalances, useBudgets, useCategories, useDemoMode, useGoals,
-  useLoans, usePaymentMethods, useSubscriptions, useTxns,
-} from "@/lib/hooks";
-import {
-  ccOutstanding, computeBalances, expenseTotal, incomeTotal, investedTotal, loanSummaries, netWorth,
-} from "@/lib/finance";
-import { filterByRange, fmtDay, monthKeyOf, rangeForPreset, type DatePreset, type DateRange } from "@/lib/dates";
-import { addMonths, format, startOfMonth, startOfToday, subMonths } from "date-fns";
-import { formatINR, pct } from "@/lib/money";
-import { accountBalanceList, categoryBreakdown, monthSeries, needsWantsSplit, paymentMethodSplit } from "@/lib/analytics";
-import { activeWeights, healthScoreForMonth } from "@/lib/healthScore";
-import { Card, CardTitle, Empty, Stat } from "@/components/ui";
-import { DateFilter } from "@/components/DateFilter";
-import { DonutChart, HBarChart, IncomeExpenseChart, SavingsRateChart, TrendChart } from "@/components/charts";
-import { DemoEmpty } from "@/components/DemoEmpty";
-import { ArrowDownRight, ArrowUpRight, CalendarClock, TrendingUp, Wallet } from "lucide-react";
 import Link from "next/link";
-import { differenceInCalendarDays, parseISO } from "date-fns";
+import {
+  addMonths, differenceInCalendarDays, endOfMonth, format, parseISO, startOfMonth, startOfToday, subMonths,
+} from "date-fns";
+import {
+  ArrowDownRight, ArrowUpRight, CalendarClock, ChevronLeft, ChevronRight, Lightbulb,
+} from "lucide-react";
+import {
+  useAccounts, useBalances, useBudgets, useCategories, useLoans, useSubscriptions, useTxns,
+} from "@/lib/hooks";
+import { expenseTotal, incomeTotal, netWorth } from "@/lib/finance";
+import { filterByRange, fmtDay } from "@/lib/dates";
+import { formatINR, pct } from "@/lib/money";
+import { categoryBreakdown } from "@/lib/analytics";
+import { generateInsights } from "@/lib/insights";
+import { cn } from "@/lib/utils";
+import { Card, Empty } from "@/components/ui";
+import { DemoEmpty } from "@/components/DemoEmpty";
 
-export default function DashboardPage() {
+const OUTFLOW = ["expense", "lend", "borrow_repayment", "investment"];
+const INFLOW = ["income", "refund", "lend_repayment", "borrow"];
+
+function SectionHead({ title, href, linkLabel }: { title: string; href?: string; linkLabel?: string }) {
+  return (
+    <div className="mb-3 flex items-center justify-between">
+      <h2 className="text-sm font-semibold text-ink">{title}</h2>
+      {href && (
+        <Link href={href} className="text-xs font-medium text-accent hover:underline">
+          {linkLabel ?? "See all"}
+        </Link>
+      )}
+    </div>
+  );
+}
+
+function MiniStat({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: "good" | "bad" }) {
+  return (
+    <div className="rounded-2xl border border-border bg-card p-4">
+      <p className="text-xs text-muted">{label}</p>
+      <p className={cn("tnum mt-1 truncate text-lg font-bold", tone === "good" && "text-good", tone === "bad" && "text-danger")}>
+        {value}
+      </p>
+      {sub && <p className="mt-0.5 truncate text-[11px] text-muted">{sub}</p>}
+    </div>
+  );
+}
+
+export default function HomePage() {
   const accounts = useAccounts();
   const txns = useTxns();
   const categories = useCategories();
-  const paymentMethods = usePaymentMethods();
   const subscriptions = useSubscriptions();
   const loans = useLoans();
   const budgets = useBudgets();
-  const demo = useDemoMode();
-
-  const [preset, setPreset] = useState<DatePreset>("month");
-  const [custom, setCustom] = useState<DateRange>({
-    start: startOfMonth(new Date()),
-    end: new Date(),
-  });
-
-  const ready = accounts && txns && categories && paymentMethods && subscriptions && loans && budgets;
   const balances = useBalances(accounts, txns);
 
-  const range = useMemo(() => rangeForPreset(preset, custom), [preset, custom]);
-  const rangedTxns = useMemo(() => (txns ? filterByRange(txns, range) : []), [txns, range]);
+  // 0 = this month, 1 = last month, …
+  const [offset, setOffset] = useState(0);
+  const ready = accounts && txns && categories && subscriptions && loans && budgets;
 
-  const derived = useMemo(() => {
+  const d = useMemo(() => {
     if (!ready) return null;
-    const active = accounts.filter((a) => a.isActive);
-    const bankCash = active
-      .filter((a) => ["bank", "cash", "wallet"].includes(a.type))
-      .reduce((s, a) => s + (balances.get(a.id) ?? a.openingBalance), 0);
-    const cashBal = active
-      .filter((a) => a.type === "cash")
-      .reduce((s, a) => s + (balances.get(a.id) ?? a.openingBalance), 0);
-    const ccOut = active
-      .filter((a) => a.type === "credit_card")
-      .reduce((s, a) => s + ccOutstanding(balances.get(a.id) ?? 0), 0);
+    const now = new Date();
+    const monthStart = startOfMonth(subMonths(now, offset));
+    const isCurrent = offset === 0;
+    const range = { start: monthStart, end: isCurrent ? now : endOfMonth(monthStart) };
+    // compare like-for-like: for the current month, last month up to the same day
+    const prevStart = startOfMonth(subMonths(monthStart, 1));
+    const prevRange = { start: prevStart, end: isCurrent ? addMonths(now, -1) : endOfMonth(prevStart) };
 
-    const income = incomeTotal(rangedTxns);
-    const expense = expenseTotal(rangedTxns);
-    const invested = investedTotal(rangedTxns);
-    const savings = income - expense;
-    const savingsPct = pct(Math.max(0, savings), income);
+    const monthTxns = filterByRange(txns, range);
+    const income = incomeTotal(monthTxns);
+    const spent = expenseTotal(monthTxns);
+    const prevSpent = expenseTotal(filterByRange(txns, prevRange));
+    const saved = income - spent;
 
-    // previous-period comparison: same day-of-month window in the previous month
-    // (a fixed ms-length span under-counts when the previous month is longer)
-    const prevRange = { start: startOfMonth(addMonths(range.end, -1)), end: addMonths(range.end, -1) };
-    const prevTxns = filterByRange(txns, prevRange);
-    const prevExpense = expenseTotal(prevTxns);
+    const nw = netWorth(accounts.filter((a) => a.isActive), balances, loans, txns);
 
-    const nw = netWorth(active, balances, loans, txns);
-    const lentPaid = loanSummaries(loans, txns)
-      .filter((s) => s.loan.direction === "lent")
-      .reduce((a, s) => a + s.paid, 0);
-    const upcoming = subscriptions
-      .filter((s) => s.isActive)
-      .map((s) => ({ ...s, daysLeft: differenceInCalendarDays(parseISO(s.nextDueDate), startOfToday()) }))
-      .filter((s) => s.daysLeft <= 10)
-      .sort((a, b) => a.daysLeft - b.daysLeft)
-      .slice(0, 6);
+    const overall = budgets.find((b) => !b.categoryId);
+    const limit = overall?.amount ?? income;
 
-    const recent = [...txns].sort((a, b) => +parseISO(b.date) - +parseISO(a.date)).slice(0, 8);
+    const cats = categoryBreakdown(monthTxns, categories);
 
-    const thisMonthKey = format(new Date(), "yyyy-MM");
-    const hs = healthScoreForMonth(thisMonthKey, {
-      txns, budgets, accounts, loans, categories,
-    });
+    const dueSoon = isCurrent
+      ? subscriptions
+          .filter((s) => s.isActive)
+          .map((s) => ({ ...s, daysLeft: differenceInCalendarDays(parseISO(s.nextDueDate), startOfToday()) }))
+          .filter((s) => s.daysLeft <= 10)
+          .sort((a, b) => a.daysLeft - b.daysLeft)
+          .slice(0, 4)
+      : [];
+
+    const tips = isCurrent
+      ? generateInsights(txns, categories, budgets, loans)
+          .filter((i) => i.severity !== "info" || i.id === "top-category")
+          .slice(0, 3)
+      : [];
+
+    const recent = [...monthTxns].sort((a, b) => +parseISO(b.date) - +parseISO(a.date)).slice(0, 5);
 
     return {
-      bankCash, cashBal, ccOut, income, expense, invested, savings, savingsPct,
-      prevExpense, nw, lentPaid, upcoming, recent, hs,
-      weights: activeWeights(),
-      series6: monthSeries(txns, 6),
-      catSlices: categoryBreakdown(rangedTxns, categories),
-      acctDist: accountBalanceList(accounts, balances),
-      pmSplit: paymentMethodSplit(rangedTxns, paymentMethods),
-      nwSplit: needsWantsSplit(rangedTxns, categories),
+      monthStart, isCurrent, income, spent, prevSpent, saved, nw, limit,
+      limitLabel: overall ? "budget" : "income", cats, dueSoon, tips, recent,
     };
-  }, [ready, accounts, balances, rangedTxns, txns, range, loans, subscriptions, categories, paymentMethods, budgets]);
+  }, [ready, offset, txns, accounts, balances, loans, budgets, categories, subscriptions]);
 
-  if (!ready || !derived) {
+  if (!ready || !d) {
     return <div className="py-20 text-center text-sm text-muted">Loading your finances…</div>;
   }
-
   if (txns.length === 0 && accounts.filter((a) => a.isActive).length === 0) {
     return <DemoEmpty />;
   }
 
-  const d = derived;
-  const expChange = d.prevExpense > 0 ? pct(d.expense - d.prevExpense, d.prevExpense) : null;
+  const change = d.prevSpent > 0 ? pct(d.spent - d.prevSpent, d.prevSpent) : null;
+  const used = d.limit > 0 ? Math.round((d.spent / d.limit) * 100) : 0;
+  const barColor = used >= 100 ? "var(--danger)" : used >= 85 ? "var(--warn)" : "var(--accent)";
+  const topCats = d.cats.slice(0, 5);
+  const maxCat = topCats[0]?.value ?? 1;
+  const catName = (id?: string) => (id ? categories.find((c) => c.id === id)?.name : undefined);
+  const accName = (id: string) => accounts.find((a) => a.id === id)?.name ?? "—";
+  const monthLabel = format(d.monthStart, "MMMM yyyy");
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-          <p className="text-sm text-muted">Your money at a glance</p>
+    <div className="mx-auto max-w-5xl space-y-5">
+      {/* month switcher */}
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-bold tracking-tight sm:text-2xl">{d.isCurrent ? "This month" : monthLabel}</h1>
+        <div className="flex items-center gap-1 rounded-xl border border-border bg-card p-1">
+          <button onClick={() => setOffset((o) => o + 1)} aria-label="Previous month" className="rounded-lg p-1.5 text-muted hover:bg-cardhover hover:text-ink">
+            <ChevronLeft size={18} />
+          </button>
+          <span className="min-w-[84px] text-center text-sm font-medium">{format(d.monthStart, "MMM yyyy")}</span>
+          <button
+            onClick={() => setOffset((o) => Math.max(0, o - 1))}
+            disabled={d.isCurrent}
+            aria-label="Next month"
+            className="rounded-lg p-1.5 text-muted hover:bg-cardhover hover:text-ink disabled:opacity-30"
+          >
+            <ChevronRight size={18} />
+          </button>
         </div>
-        <DateFilter preset={preset} onChange={setPreset} custom={custom} onCustomChange={setCustom} />
       </div>
 
-      {/* top stats */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
-        <Stat label="Bank + Cash Balance" value={formatINR(d.bankCash)} icon={<Wallet size={14} />} />
-        <Stat label="Credit Card Outstanding" value={formatINR(d.ccOut)} tone={d.ccOut > 0 ? "bad" : "default"} icon={<ArrowDownRight size={14} />} />
-        <Stat label="Income (period)" value={formatINR(d.income)} tone="good" icon={<ArrowUpRight size={14} />} />
-        <Stat
-          label="Expenses (period)"
-          value={formatINR(d.expense)}
-          tone="bad"
-          sub={expChange !== null ? `${expChange >= 0 ? "+" : ""}${expChange.toFixed(1)}% vs previous period` : undefined}
-        />
-        <Stat
-          label="Savings (period)"
-          value={formatINR(d.savings)}
-          tone={d.savings >= 0 ? "good" : "bad"}
-          sub={d.income > 0 ? `${d.savingsPct.toFixed(0)}% savings rate` : "No income recorded"}
-        />
-      </div>
+      <div className="grid gap-5 lg:grid-cols-3">
+        {/* ── left: the main story ── */}
+        <div className="space-y-5 lg:col-span-2">
+          {/* hero: what did I spend */}
+          <Card className="p-6">
+            <p className="text-sm text-muted">You spent</p>
+            <div className="mt-1 flex flex-wrap items-end gap-x-3 gap-y-1">
+              <p className="tnum text-4xl font-bold tracking-tight">{formatINR(d.spent)}</p>
+              {change !== null && (
+                <span
+                  className={cn(
+                    "mb-1 inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-xs font-medium",
+                    change > 0 ? "bg-danger/10 text-danger" : "bg-good/10 text-good"
+                  )}
+                >
+                  {change > 0 ? <ArrowUpRight size={13} /> : <ArrowDownRight size={13} />}
+                  {Math.abs(change).toFixed(0)}% vs {format(subMonths(d.monthStart, 1), "MMM")}
+                </span>
+              )}
+            </div>
+            {d.limit > 0 && (
+              <div className="mt-5">
+                <div className="h-2.5 w-full overflow-hidden rounded-full bg-cardhover">
+                  <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(used, 100)}%`, backgroundColor: barColor }} />
+                </div>
+                <p className="mt-2 text-xs text-muted">
+                  {used}% of your {formatINR(d.limit)} {d.limitLabel}
+                  {d.limit - d.spent > 0 ? ` · ${formatINR(d.limit - d.spent)} left` : ` · over by ${formatINR(d.spent - d.limit)}`}
+                </p>
+              </div>
+            )}
+          </Card>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Stat label="Net Worth" value={formatINR(d.nw.total)} tone={d.nw.total >= 0 ? "good" : "bad"}
-          sub={`Assets ${formatINR(d.nw.bankAndCash + d.nw.investments + d.nw.lentOutstanding)} − Liabilities ${formatINR(d.nw.ccOutstanding + d.nw.borrowedOutstanding)}`} />
-        <Stat label="Invested / Saved" value={formatINR(d.nw.investments)} sub="investment accounts (incl. tracked SIP credits)" />
-        <Stat label="Money Lent (pending)" value={formatINR(d.nw.lentOutstanding)} sub={`recovered ${formatINR(d.lentPaid)} so far`} />
-        <Stat label="You Owe" value={formatINR(d.nw.borrowedOutstanding + d.nw.ccOutstanding)} tone={d.nw.borrowedOutstanding + d.nw.ccOutstanding > 0 ? "warn" : "good"} sub="borrowed + credit cards" />
-      </div>
-
-      {/* charts row 1 */}
-      <div className="grid gap-4 xl:grid-cols-3">
-        <Card className="xl:col-span-2">
-          <CardTitle title="Income vs Expenses" sub="Last 6 months, all accounts" />
-          <IncomeExpenseChart data={d.series6} />
-        </Card>
-        <Card>
-          <CardTitle title="Spending by Category" sub="Selected period" right={
-            <Link href="/analytics" className="text-xs font-medium text-accent hover:underline">Details</Link>
-          } />
-          {d.catSlices.length > 0 ? (
-            <DonutChart data={d.catSlices.map((c) => ({ name: c.name, value: c.value, color: c.color }))} />
-          ) : (
-            <p className="py-16 text-center text-xs text-muted">No expenses in this period</p>
-          )}
-        </Card>
-      </div>
-
-      {/* charts row 2 */}
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <Card>
-          <CardTitle title="Spending Trend" sub="Last 6 months" />
-          <TrendChart data={d.series6} dataKey="expense" color="var(--danger)" />
-        </Card>
-        <Card>
-          <CardTitle title="Savings Rate" sub="Last 6 months" />
-          <SavingsRateChart data={d.series6} />
-        </Card>
-        <Card>
-          <CardTitle title="Needs vs Wants" sub="Selected period" />
-          {d.nwSplit.need + d.nwSplit.want > 0 ? (
-            <DonutChart
-              data={[
-                { name: "Needs", value: d.nwSplit.need, color: "var(--good)" },
-                { name: "Wants", value: d.nwSplit.want, color: "var(--warn)" },
-                ...(d.nwSplit.other > 0 ? [{ name: "Other", value: d.nwSplit.other, color: "var(--faint)" }] : []),
-              ]}
+          {/* 4 key numbers */}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <MiniStat label="Income" value={formatINR(d.income)} tone={d.income > 0 ? "good" : undefined} />
+            <MiniStat
+              label="Saved"
+              value={formatINR(d.saved)}
+              tone={d.saved < 0 ? "bad" : undefined}
+              sub={d.income > 0 ? `${Math.round(pct(Math.max(0, d.saved), d.income))}% of income` : undefined}
             />
-          ) : (
-            <p className="py-16 text-center text-xs text-muted">No expenses in this period</p>
-          )}
-        </Card>
-        <Card>
-          <CardTitle title="Payment Methods" sub="Selected period spend" />
-          {d.pmSplit.length > 0 ? (
-            <DonutChart data={d.pmSplit.map((p) => ({ name: p.name, value: p.value }))} />
-          ) : (
-            <p className="py-16 text-center text-xs text-muted">No expenses in this period</p>
-          )}
-        </Card>
-      </div>
-
-      {/* bottom row */}
-      <div className="grid gap-4 xl:grid-cols-3">
-        <Card>
-          <CardTitle title="Health Score" sub="This month" right={
-            <Link href="/analytics" className="text-xs font-medium text-accent hover:underline">
-              <TrendingUp size={14} className="inline" /> Trends
-            </Link>
-          } />
-          <div className="flex items-center gap-4">
-            <div className="relative flex h-24 w-24 items-center justify-center">
-              <svg viewBox="0 0 80 80" className="h-24 w-24 -rotate-90">
-                <circle cx="40" cy="40" r="34" fill="none" stroke="var(--cardhover)" strokeWidth="8" />
-                <circle
-                  cx="40" cy="40" r="34" fill="none"
-                  stroke={d.hs.total >= 70 ? "var(--good)" : d.hs.total >= 45 ? "var(--warn)" : "var(--danger)"}
-                  strokeWidth="8" strokeLinecap="round"
-                  strokeDasharray={`${(d.hs.total / 100) * 213.6} 213.6`}
-                />
-              </svg>
-              <span className="absolute text-2xl font-bold">{d.hs.total}</span>
-            </div>
-            <div className="space-y-1 text-xs text-muted">
-              <p>Savings rate: <b className="text-ink">{d.hs.savings}/{d.weights.savings}</b></p>
-              <p>Budget discipline: <b className="text-ink">{d.hs.budget}/{d.weights.budget}</b></p>
-              <p>Debt load: <b className="text-ink">{d.hs.debt}/{d.weights.debt}</b></p>
-              <p>Lending hygiene: <b className="text-ink">{d.hs.lending}/{d.weights.lending}</b></p>
-            </div>
+            <MiniStat label="In your accounts" value={formatINR(d.nw.bankAndCash)} sub="bank + cash" />
+            <MiniStat label="Owed to you" value={formatINR(d.nw.lentOutstanding)} sub="money you lent" />
           </div>
-        </Card>
 
-        <Card>
-          <CardTitle title="Upcoming Bills" sub="Due within 10 days" right={
-            <Link href="/subscriptions" className="text-xs font-medium text-accent hover:underline">All</Link>
-          } />
-          {d.upcoming.length === 0 ? (
-            <p className="py-8 text-center text-xs text-muted">Nothing due soon 🎉</p>
-          ) : (
-            <ul className="space-y-2.5">
-              {d.upcoming.map((s) => (
-                <li key={s.id} className="flex items-center justify-between gap-3 text-sm">
-                  <span className="flex min-w-0 items-center gap-2 text-ink">
-                    <CalendarClock size={14} className={`shrink-0 ${s.daysLeft <= 2 ? "text-danger" : "text-muted"}`} />
-                    <span className="truncate" title={s.name}>{s.name}</span>
-                  </span>
-                  <span className="shrink-0 text-right">
-                    <span className="tnum font-semibold">{formatINR(s.amount)}</span>
-                    <span className="block text-[11px] text-muted">
-                      {s.daysLeft < 0 ? `overdue ${-s.daysLeft}d` : s.daysLeft === 0 ? "due today" : `in ${s.daysLeft}d`}
+          {/* where it went */}
+          <Card>
+            <SectionHead title="Where your money went" href="/analytics" linkLabel="Insights" />
+            {topCats.length === 0 ? (
+              <p className="py-6 text-center text-sm text-muted">No spending recorded in {monthLabel}.</p>
+            ) : (
+              <ul className="space-y-3">
+                {topCats.map((c) => (
+                  <li key={c.categoryId}>
+                    <div className="mb-1 flex items-center justify-between text-sm">
+                      <span className="truncate text-ink">{c.name}</span>
+                      <span className="tnum ml-3 shrink-0 font-medium">
+                        {formatINR(c.value)} <span className="text-xs font-normal text-muted">· {c.share.toFixed(0)}%</span>
+                      </span>
+                    </div>
+                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-cardhover">
+                      <div className="h-full rounded-full" style={{ width: `${(c.value / maxCat) * 100}%`, backgroundColor: c.color }} />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+
+          {/* recent */}
+          <Card>
+            <SectionHead title="Recent" href="/transactions" />
+            {d.recent.length === 0 ? (
+              <Empty title="No transactions this month" sub="Tap + to add your first one." />
+            ) : (
+              <ul className="-my-1 divide-y divide-border">
+                {d.recent.map((t) => {
+                  const out = OUTFLOW.includes(t.type);
+                  const inc = INFLOW.includes(t.type);
+                  const sub = catName(t.categoryId) ?? t.type.replace("_", " ");
+                  return (
+                    <li key={t.id} className="flex items-center justify-between gap-3 py-2.5">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-ink">{t.description}</p>
+                        <p className="truncate text-xs text-muted">
+                          {format(parseISO(t.date), "d MMM")} · {sub} · {accName(t.accountId)}
+                        </p>
+                      </div>
+                      <span className={cn("tnum shrink-0 text-sm font-semibold", out ? "text-ink" : inc ? "text-good" : "text-muted")}>
+                        {out ? "−" : inc ? "+" : ""}{formatINR(t.amount)}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </Card>
+        </div>
+
+        {/* ── right: what needs attention ── */}
+        <div className="space-y-5">
+          {d.tips.length > 0 && (
+            <Card>
+              <SectionHead title="Worth knowing" href="/analytics" linkLabel="More" />
+              <ul className="space-y-3">
+                {d.tips.map((t) => (
+                  <li key={t.id} className="flex gap-3">
+                    <span
+                      className={cn(
+                        "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg",
+                        t.severity === "alert" ? "bg-danger/10 text-danger" : t.severity === "warning" ? "bg-warn/10 text-warn" : "bg-accent/10 text-accent"
+                      )}
+                    >
+                      <Lightbulb size={14} />
                     </span>
-                  </span>
-                </li>
-              ))}
-            </ul>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium leading-snug text-ink">{t.title}</p>
+                      <p className="mt-0.5 text-xs text-muted">{t.calc}</p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </Card>
           )}
-        </Card>
 
-        <Card>
-          <CardTitle title="Account Distribution" sub="Balances by account" />
-          {d.acctDist.length > 0 ? (
-            <HBarChart data={d.acctDist.map((a) => ({ name: a.name, total: a.balance }))} name="Balance" />
-          ) : (
-            <p className="py-16 text-center text-xs text-muted">Add an account to see balances</p>
+          {d.isCurrent && (
+            <Card>
+              <SectionHead title="Due soon" href="/plan?tab=bills" />
+              {d.dueSoon.length === 0 ? (
+                <p className="py-4 text-center text-sm text-muted">Nothing due in the next 10 days.</p>
+              ) : (
+                <ul className="space-y-3">
+                  {d.dueSoon.map((s) => (
+                    <li key={s.id} className="flex items-center justify-between gap-3">
+                      <span className="flex min-w-0 items-center gap-2.5">
+                        <CalendarClock size={16} className={cn("shrink-0", s.daysLeft <= 2 ? "text-danger" : "text-muted")} />
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm text-ink">{s.name}</span>
+                          <span className={cn("block text-[11px]", s.daysLeft <= 2 ? "text-danger" : "text-muted")}>
+                            {s.daysLeft < 0 ? `overdue by ${-s.daysLeft}d` : s.daysLeft === 0 ? "due today" : `in ${s.daysLeft} days · ${fmtDay(s.nextDueDate)}`}
+                          </span>
+                        </span>
+                      </span>
+                      <span className="tnum shrink-0 text-sm font-semibold">{formatINR(s.amount)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
           )}
-        </Card>
+
+          <Card>
+              <SectionHead title="Big picture" href="/accounts" linkLabel="Accounts" />
+              <ul className="space-y-2 text-sm">
+                {d.nw.investments > 0 && (
+                  <li className="flex justify-between">
+                    <span className="text-muted">Investments</span>
+                    <span className="tnum font-medium">{formatINR(d.nw.investments)}</span>
+                  </li>
+                )}
+                {d.nw.ccOutstanding > 0 && (
+                  <li className="flex justify-between">
+                    <Link href="/accounts" className="text-muted hover:text-ink">Credit card dues</Link>
+                    <span className="tnum font-medium text-danger">{formatINR(d.nw.ccOutstanding)}</span>
+                  </li>
+                )}
+                {d.nw.borrowedOutstanding > 0 && (
+                  <li className="flex justify-between">
+                    <Link href="/lending" className="text-muted hover:text-ink">You owe people</Link>
+                    <span className="tnum font-medium text-warn">{formatINR(d.nw.borrowedOutstanding)}</span>
+                  </li>
+                )}
+                <li className="flex justify-between border-t border-border pt-2">
+                  <span className="text-muted">Net worth</span>
+                  <span className="tnum font-semibold">{formatINR(d.nw.total)}</span>
+                </li>
+              </ul>
+            </Card>
+        </div>
       </div>
-
-      {/* recent transactions */}
-      <Card>
-        <CardTitle title="Recent Transactions" sub="Latest activity across accounts" right={
-          <Link href="/transactions" className="text-xs font-medium text-accent hover:underline">View all</Link>
-        } />
-        {d.recent.length === 0 ? (
-          <Empty title="No transactions yet" sub="Add your first transaction with the + button, or import a CSV from the Transactions page." />
-        ) : (
-          <ul className="divide-y divide-border">
-            {d.recent.map((t) => {
-              const isOut = ["expense", "lend", "borrow_repayment", "investment"].includes(t.type);
-              const catName = t.categoryId ? categories.find((c) => c.id === t.categoryId)?.name : undefined;
-              const acctName = accounts.find((a) => a.id === t.accountId)?.name ?? "—";
-              return (
-                <li key={t.id} className="flex items-center justify-between py-2.5 text-sm">
-                  <div className="min-w-0">
-                    <p className="truncate font-medium text-ink" title={t.description}>{t.description}</p>
-                    <p className="truncate text-xs text-muted" title={`${fmtDay(t.date)} · ${acctName}${catName ? ` · ${catName}` : ""}`}>
-                      {fmtDay(t.date)} · {acctName}{catName ? ` · ${catName}` : ""}
-                      {t.type !== "expense" && t.type !== "income" ? ` · ${t.type.replace("_", " ")}` : ""}
-                    </p>
-                  </div>
-                  <span className={`tnum ml-3 shrink-0 font-semibold ${isOut ? "text-danger" : t.type === "income" ? "text-good" : "text-ink"}`}>
-                    {isOut ? "−" : t.type === "income" ? "+" : ""}{formatINR(t.amount)}
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </Card>
     </div>
   );
 }

@@ -13,7 +13,7 @@ import { Card, CardTitle, Btn, Empty, Input, Modal, Select, Badge } from "@/comp
 import { DateFilter } from "@/components/DateFilter";
 import { TxnForm } from "@/components/TxnForm";
 import { cn, downloadFile } from "@/lib/utils";
-import { ArrowDownUp, Download, Pencil, Search, Trash2, Upload } from "lucide-react";
+import { ArrowDownUp, Download, Pencil, Search, SlidersHorizontal, Trash2, Upload } from "lucide-react";
 import { startOfMonth, format, parseISO } from "date-fns";
 import type { Txn, TxnType } from "@/lib/types";
 
@@ -38,6 +38,8 @@ function TransactionsInner() {
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [catFilter, setCatFilter] = useState<string>("all");
   const [acctFilter, setAcctFilter] = useState<string>("all");
+  const [showFilters, setShowFilters] = useState(false);
+  const activeFilterCount = [typeFilter, catFilter, acctFilter].filter((f) => f !== "all").length;
   const [sortDesc, setSortDesc] = useState(true);
   const [editTxn, setEditTxn] = useState<Txn | null>(null);
   const [delTxn, setDelTxn] = useState<Txn | null>(null);
@@ -93,65 +95,64 @@ function TransactionsInner() {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Transactions</h1>
-          <p className="text-sm text-muted">{filtered.length} entries in range</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Btn variant="outline" size="sm" onClick={async () => downloadFile(`artha-transactions-${format(new Date(), "yyyy-MM-dd")}.csv`, await exportTxnsCsv(filtered))}>
-            <Download size={13} /> Export CSV
-          </Btn>
-          <Btn variant="outline" size="sm" onClick={() => setImportOpen(true)}>
+        <h1 className="text-2xl font-bold tracking-tight">Activity</h1>
+        <div className="flex items-center gap-2">
+          <Btn variant="ghost" size="sm" onClick={() => setImportOpen(true)}>
             <Upload size={13} /> Import
           </Btn>
+          <Btn variant="ghost" size="sm" onClick={async () => downloadFile(`artha-transactions-${format(new Date(), "yyyy-MM-dd")}.csv`, await exportTxnsCsv(filtered))}>
+            <Download size={13} /> Export
+          </Btn>
         </div>
       </div>
 
-      <DateFilter preset={preset} onChange={setPreset} custom={custom} onCustomChange={setCustom} />
-
-      {/* filter bar */}
-      <Card className="!p-3">
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
-          <div className="relative lg:col-span-2">
+      {/* search + date + optional filters */}
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative min-w-[200px] flex-1">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-faint" />
-            <Input className="pl-8" placeholder="Search description, merchant, tag…" value={q} onChange={(e) => setQ(e.target.value)} />
+            <Input className="pl-8" placeholder="Search…" value={q} onChange={(e) => setQ(e.target.value)} />
           </div>
-          <Select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
-            <option value="all">All types</option>
-            {Object.entries(TYPE_LABEL).map(([k, v]) => (
-              <option key={k} value={k}>{v}</option>
-            ))}
-          </Select>
-          <Select value={catFilter} onChange={(e) => setCatFilter(e.target.value)}>
-            <option value="all">All categories</option>
-            {categories.filter((c) => !c.isArchived).map((c) => (
-              <option key={c.id} value={c.id}>{c.parentId ? "— " : ""}{c.name}</option>
-            ))}
-          </Select>
-          <Select value={acctFilter} onChange={(e) => setAcctFilter(e.target.value)}>
-            <option value="all">All accounts</option>
-            {accounts.filter((a) => a.isActive).map((a) => (
-              <option key={a.id} value={a.id}>{a.name}</option>
-            ))}
-          </Select>
+          <DateFilter preset={preset} onChange={setPreset} custom={custom} onCustomChange={setCustom} />
+          <Btn
+            variant={showFilters || activeFilterCount > 0 ? "outline" : "ghost"}
+            size="sm"
+            className="py-2.5"
+            onClick={() => setShowFilters((v) => !v)}
+          >
+            <SlidersHorizontal size={13} /> Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}
+          </Btn>
         </div>
-      </Card>
-
-      {/* totals strip */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-        {[
-          ["Income", totals.inc, "text-good"],
-          ["Spent (gross)", totals.exp, "text-danger"],
-          ["Refunds", totals.refunds, "text-good"],
-          ["Net spend", totals.net, "text-ink"],
-          ["Invested", totals.inv, "text-accent"],
-        ].map(([label, val, cls]) => (
-          <div key={label as string} className="rounded-xl border border-border bg-card px-3 py-2.5">
-            <p className="text-[11px] text-muted">{label}</p>
-            <p className={cn("tnum text-sm font-bold", cls as string)}>{formatINR(val as number)}</p>
+        {showFilters && (
+          <div className="grid gap-2 sm:grid-cols-3">
+            <Select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
+              <option value="all">All types</option>
+              {Object.entries(TYPE_LABEL).map(([k, v]) => (
+                <option key={k} value={k}>{v}</option>
+              ))}
+            </Select>
+            <Select value={catFilter} onChange={(e) => setCatFilter(e.target.value)}>
+              <option value="all">All categories</option>
+              {categories.filter((c) => !c.isArchived).map((c) => (
+                <option key={c.id} value={c.id}>{c.parentId ? "— " : ""}{c.name}</option>
+              ))}
+            </Select>
+            <Select value={acctFilter} onChange={(e) => setAcctFilter(e.target.value)}>
+              <option value="all">All accounts</option>
+              {accounts.filter((a) => a.isActive).map((a) => (
+                <option key={a.id} value={a.id}>{a.name}</option>
+              ))}
+            </Select>
           </div>
-        ))}
+        )}
       </div>
+
+      {/* one-line totals */}
+      <p className="text-sm text-muted">
+        {filtered.length} entries · spent <b className="tnum text-ink">{formatINR(totals.net)}</b>
+        {totals.inc > 0 && <> · received <b className="tnum text-good">{formatINR(totals.inc)}</b></>}
+        {totals.inv > 0 && <> · invested <b className="tnum text-ink">{formatINR(totals.inv)}</b></>}
+      </p>
 
       {filtered.length === 0 ? (
         <Empty

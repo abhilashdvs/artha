@@ -21,11 +21,30 @@ npm run build      # production build
 npx tsc --noEmit   # type check
 ```
 
+## How it's organised
+
+The app is built around four everyday sections, with everything else one tap away under **More**:
+
+| Section | What you'll find |
+| --- | --- |
+| **Home** | What you spent this month vs budget/income, 4 key numbers, where the money went, up to 3 plain-language tips, bills due soon, recent activity. Switch months with ‹ › |
+| **Activity** | Every transaction: search, date range, optional filters, CSV import/export |
+| **Plan** | Tabs for Budgets, Bills & subscriptions, and Goals |
+| **People** | Money you've lent and borrowed, with repayments |
+| **More** | Insights, Accounts & cards, Categories, Reports, Settings |
+
+Add a transaction from the **+** button (centre of the mobile tab bar, top of the desktop sidebar) or press
+<kbd>N</kbd> anywhere. Only amount, description, category and account are shown by default; date, merchant,
+payment method, tags and notes sit behind "Add date, merchant, notes…".
+
+**Look & feel:** "Calm mint" palette — light by default with a matching dark mode (toggle in the sidebar or
+More sheet). Colours live as CSS variables in `src/app/globals.css`.
+
 ## What's inside
 
 | Area | Highlights |
 | --- | --- |
-| Dashboard | Net worth, month snapshot, savings rate, health score, upcoming dues |
+| Home | Month snapshot, budget progress, top categories, tips, upcoming dues, net worth |
 | Accounts | Bank / cash / wallet / investment accounts + credit cards with limit tracking |
 | Transactions | Full CRUD, filters, CSV/Excel import wizard with duplicate detection |
 | Categories | Hierarchy, need/want tags, fixed/variable flow, safe delete with merge |
@@ -70,7 +89,7 @@ the db/hooks layer — pages and analytics stay pure.
 
 ```
 src/
-  app/            # 12 routes: dashboard, accounts, transactions, categories,
+  app/            # routes: home (/), plan (budgets/subscriptions/goals tabs), accounts, transactions, categories,
                   # budgets, subscriptions, lending, income, analytics, goals,
                   # reports, settings
   components/     # UI primitives, charts, TxnForm, modals

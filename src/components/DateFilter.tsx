@@ -1,22 +1,23 @@
 "use client";
 
-import { useState } from "react";
 import type { DatePreset, DateRange } from "@/lib/dates";
-import { cn } from "@/lib/utils";
 import { Input } from "./ui";
 import { format, parseISO } from "date-fns";
+import { CalendarDays } from "lucide-react";
 
 const PRESETS: { key: DatePreset; label: string }[] = [
+  { key: "month", label: "This month" },
+  { key: "last_month", label: "Last month" },
+  { key: "week", label: "This week" },
   { key: "today", label: "Today" },
-  { key: "week", label: "This Week" },
-  { key: "month", label: "This Month" },
-  { key: "last_month", label: "Last Month" },
-  { key: "3m", label: "3M" },
-  { key: "6m", label: "6M" },
-  { key: "year", label: "This Year" },
-  { key: "all", label: "All" },
+  { key: "3m", label: "Last 3 months" },
+  { key: "6m", label: "Last 6 months" },
+  { key: "year", label: "This year" },
+  { key: "all", label: "All time" },
+  { key: "custom", label: "Custom dates…" },
 ];
 
+/** One compact dropdown instead of a row of chips. */
 export function DateFilter({
   preset, onChange, custom, onCustomChange,
 }: {
@@ -25,44 +26,36 @@ export function DateFilter({
   custom: DateRange;
   onCustomChange: (r: DateRange) => void;
 }) {
-  const [showCustom, setShowCustom] = useState(false);
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      {PRESETS.map((p) => (
-        <button
-          key={p.key}
-          onClick={() => { setShowCustom(false); onChange(p.key); }}
-          className={cn(
-            "rounded-full px-3 py-2 text-xs font-medium transition-colors",
-            preset === p.key && !showCustom
-              ? "bg-accent text-white"
-              : "border border-border text-muted hover:bg-cardhover"
-          )}
+    <div className="flex flex-wrap items-center gap-2">
+      <label className="relative inline-flex items-center">
+        <CalendarDays size={15} className="pointer-events-none absolute left-3 text-muted" />
+        <select
+          aria-label="Date range"
+          value={preset}
+          onChange={(e) => onChange(e.target.value as DatePreset)}
+          className="cursor-pointer appearance-none rounded-xl border border-border bg-card py-2 pl-9 pr-8 text-sm font-medium text-ink hover:bg-cardhover focus:border-accent focus:outline-none"
         >
-          {p.label}
-        </button>
-      ))}
-      <button
-        onClick={() => { setShowCustom(true); onChange("custom"); }}
-        className={cn(
-          "rounded-full px-3 py-2 text-xs font-medium transition-colors",
-          preset === "custom" ? "bg-accent text-white" : "border border-border text-muted hover:bg-cardhover"
-        )}
-      >
-        Custom
-      </button>
+          {PRESETS.map((p) => (
+            <option key={p.key} value={p.key}>{p.label}</option>
+          ))}
+        </select>
+        <span className="pointer-events-none absolute right-3 text-xs text-muted">▾</span>
+      </label>
       {preset === "custom" && (
-        <div className="flex w-full flex-wrap items-center gap-1.5 sm:w-auto">
+        <div className="flex items-center gap-1.5">
           <Input
             type="date"
-            className="min-w-0 flex-1 px-2 py-1 text-xs sm:w-auto sm:flex-none"
+            aria-label="From"
+            className="w-auto px-2 py-1.5 text-xs"
             value={format(custom.start, "yyyy-MM-dd")}
             onChange={(e) => e.target.value && onCustomChange({ ...custom, start: parseISO(e.target.value) })}
           />
           <span className="text-xs text-faint">→</span>
           <Input
             type="date"
-            className="min-w-0 flex-1 px-2 py-1 text-xs sm:w-auto sm:flex-none"
+            aria-label="To"
+            className="w-auto px-2 py-1.5 text-xs"
             value={format(custom.end, "yyyy-MM-dd")}
             onChange={(e) => e.target.value && onCustomChange({ ...custom, end: parseISO(e.target.value) })}
           />

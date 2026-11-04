@@ -4,51 +4,86 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
-  BarChart3, CalendarClock, FolderTree, FileSpreadsheet, HandCoins, Home,
-  ListOrdered, Menu, Moon, PiggyBank, ReceiptText, Settings, Sun, Target, Wallet, Zap,
+  BarChart3, CalendarCheck, FolderTree, FileSpreadsheet, HandCoins, Home,
+  LayoutGrid, ListOrdered, Moon, Plus, Settings, Sun, Wallet, Zap,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
 import { useDemoMode } from "@/lib/hooks";
-import { DemoBadge, Modal } from "./ui";
+import { Modal } from "./ui";
+import { openQuickAdd } from "./QuickAdd";
 
-const NAV = [
-  { href: "/", label: "Dashboard", icon: Home },
-  { href: "/transactions", label: "Transactions", icon: ListOrdered },
-  { href: "/accounts", label: "Accounts & Cards", icon: Wallet },
+// Main sections — what you use every day.
+const MAIN = [
+  { href: "/", label: "Home", icon: Home, match: ["/"] },
+  { href: "/transactions", label: "Activity", icon: ListOrdered, match: ["/transactions", "/income"] },
+  { href: "/plan", label: "Plan", icon: CalendarCheck, match: ["/plan", "/budgets", "/subscriptions", "/goals"] },
+  { href: "/lending", label: "People", icon: HandCoins, match: ["/lending"] },
+];
+
+// Everything else — setup and deeper analysis.
+const MORE = [
+  { href: "/analytics", label: "Insights", icon: BarChart3 },
+  { href: "/accounts", label: "Accounts & cards", icon: Wallet },
   { href: "/categories", label: "Categories", icon: FolderTree },
-  { href: "/budgets", label: "Budgets", icon: PiggyBank },
-  { href: "/analytics", label: "Analytics & Insights", icon: BarChart3 },
-  { href: "/lending", label: "Lending & Borrowing", icon: HandCoins },
-  { href: "/income", label: "Income", icon: ReceiptText },
-  { href: "/subscriptions", label: "Subscriptions & Bills", icon: CalendarClock },
-  { href: "/goals", label: "Savings Goals", icon: Target },
   { href: "/reports", label: "Reports", icon: FileSpreadsheet },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
+function useIsActive() {
+  const pathname = usePathname();
+  return (prefixes: string[]) =>
+    prefixes.some((p) => (p === "/" ? pathname === "/" : pathname.startsWith(p)));
+}
+
 function ThemeToggle() {
-  const { theme, setTheme } = useTheme();
+  const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   if (!mounted) return <div className="h-9 w-9" />;
   return (
     <button
-      onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-      className="rounded-xl border border-border p-2 text-muted hover:bg-cardhover"
+      onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
+      className="rounded-xl p-2 text-muted hover:bg-cardhover hover:text-ink"
       aria-label="Toggle theme"
     >
-      {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+      {resolvedTheme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
     </button>
   );
 }
 
-export function Sidebar() {
-  const pathname = usePathname();
+function DemoNote() {
   const demo = useDemoMode();
+  if (!demo) return null;
   return (
-    <aside className="fixed inset-y-0 left-0 z-40 hidden w-60 flex-col border-r border-border bg-card lg:flex">
-      <div className="flex items-center justify-between px-5 py-4">
+    <Link
+      href="/settings"
+      className="block rounded-xl bg-warn/10 px-3 py-2 text-[11px] font-medium text-warn hover:bg-warn/15"
+    >
+      You're viewing demo data · manage in Settings
+    </Link>
+  );
+}
+
+export function Sidebar() {
+  const isActive = useIsActive();
+  const link = (item: { href: string; label: string; icon: typeof Home }, active: boolean, small = false) => (
+    <Link
+      key={item.href}
+      href={item.href}
+      className={cn(
+        "flex items-center gap-3 rounded-xl px-3 font-medium transition-colors",
+        small ? "py-2 text-[13px]" : "py-2.5 text-sm",
+        active ? "bg-accent/10 text-accent" : "text-muted hover:bg-cardhover hover:text-ink"
+      )}
+    >
+      <item.icon size={small ? 16 : 18} />
+      {item.label}
+    </Link>
+  );
+  return (
+    <aside className="fixed inset-y-0 left-0 z-40 hidden w-56 flex-col border-r border-border bg-card lg:flex">
+      <div className="flex items-center justify-between px-5 py-5">
         <Link href="/" className="flex items-center gap-2">
           <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-accent text-white">
             <Zap size={16} />
@@ -57,91 +92,96 @@ export function Sidebar() {
         </Link>
         <ThemeToggle />
       </div>
-      {demo && (
-        <div className="mx-4 mb-2 flex items-center justify-between rounded-xl border border-warn/30 bg-warn/10 px-3 py-2">
-          <span className="text-[11px] font-medium text-warn">Viewing demo data</span>
-          <DemoBadge />
-        </div>
-      )}
-      <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-2">
-        {NAV.map((item) => {
-          const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-[13px] font-medium transition-colors",
-                active ? "bg-accent/10 text-accent" : "text-muted hover:bg-cardhover hover:text-ink"
-              )}
-            >
-              <item.icon size={16} />
-              {item.label}
-            </Link>
-          );
-        })}
+
+      <div className="px-3">
+        <button
+          onClick={openQuickAdd}
+          className="flex w-full items-center justify-center gap-2 rounded-xl bg-accent py-2.5 text-sm font-semibold text-white hover:bg-accentstrong"
+        >
+          <Plus size={16} /> Add transaction
+        </button>
+      </div>
+
+      <nav className="flex-1 overflow-y-auto px-3 py-4">
+        <div className="space-y-1">{MAIN.map((i) => link(i, isActive(i.match)))}</div>
+        <p className="mb-1 mt-6 px-3 text-[11px] font-semibold uppercase tracking-wider text-faint">More</p>
+        <div className="space-y-0.5">{MORE.map((i) => link(i, isActive([i.href]), true))}</div>
       </nav>
-      <div className="border-t border-border px-5 py-3">
-        <p className="text-[10px] text-faint">Local-first · INR · Your data stays in this browser</p>
+
+      <div className="space-y-2 px-3 pb-4">
+        <DemoNote />
+        <p className="px-2 text-[10px] text-faint">Your data stays in this browser</p>
       </div>
     </aside>
   );
 }
 
 export function MobileNav() {
-  const pathname = usePathname();
-  const demo = useDemoMode();
+  const isActive = useIsActive();
   const [moreOpen, setMoreOpen] = useState(false);
-  const primary = [NAV[0], NAV[1], NAV[2], NAV[5]]; // Dashboard, Transactions, Accounts, Analytics
-  const secondary = NAV.filter((n) => !primary.includes(n)); // everything else, in NAV order
-  const isActive = (href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(href));
-  const moreActive = secondary.some((n) => isActive(n.href));
+  const moreItems = [MAIN[3], ...MORE];
+  const moreActive = moreItems.some((n) => isActive([n.href]));
+
+  const tab = (item: (typeof MAIN)[number]) => (
+    <Link
+      key={item.href}
+      href={item.href}
+      className={cn(
+        "flex flex-1 flex-col items-center gap-1 py-1",
+        isActive(item.match) ? "text-accent" : "text-muted"
+      )}
+    >
+      <item.icon size={20} />
+      <span className="text-[11px] font-medium">{item.label}</span>
+    </Link>
+  );
+
   return (
     <>
-      <nav className="fixed inset-x-0 bottom-0 z-40 flex items-center justify-around border-t border-border bg-card pb-[env(safe-area-inset-bottom)] pt-2 lg:hidden">
-        {primary.map((item) => (
-          <Link
-            key={item.href}
-            href={item.href}
-            className={cn("flex flex-col items-center gap-0.5 px-2 py-0.5", isActive(item.href) ? "text-accent" : "text-muted")}
+      <nav className="fixed inset-x-0 bottom-0 z-40 flex items-end border-t border-border bg-card px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 lg:hidden">
+        {tab(MAIN[0])}
+        {tab(MAIN[1])}
+        <div className="flex flex-1 justify-center">
+          <button
+            onClick={openQuickAdd}
+            aria-label="Add transaction"
+            className="-mt-6 flex h-14 w-14 items-center justify-center rounded-full bg-accent text-white shadow-lg shadow-accent/30 active:scale-95"
           >
-            <item.icon size={18} />
-            <span className="text-[10px] font-medium">{item.label.split(" ")[0]}</span>
-          </Link>
-        ))}
+            <Plus size={26} />
+          </button>
+        </div>
+        {tab(MAIN[2])}
         <button
           onClick={() => setMoreOpen(true)}
-          className={cn("flex flex-col items-center gap-0.5 px-2 py-0.5", moreActive ? "text-accent" : "text-muted")}
+          className={cn("flex flex-1 flex-col items-center gap-1 py-1", moreActive ? "text-accent" : "text-muted")}
           aria-label="More pages"
         >
-          <Menu size={18} />
-          <span className="text-[10px] font-medium">More</span>
+          <LayoutGrid size={20} />
+          <span className="text-[11px] font-medium">More</span>
         </button>
       </nav>
+
       <Modal open={moreOpen} onClose={() => setMoreOpen(false)} title="More">
-        {demo && (
-          <div className="mb-3 flex items-center justify-between rounded-xl border border-warn/30 bg-warn/10 px-3 py-2">
-            <span className="text-[11px] font-medium text-warn">Viewing demo data</span>
-            <DemoBadge />
-          </div>
-        )}
-        <div className="space-y-0.5">
-          {secondary.map((item) => (
+        <div className="grid grid-cols-3 gap-2">
+          {moreItems.map((item) => (
             <Link
               key={item.href}
               href={item.href}
               onClick={() => setMoreOpen(false)}
               className={cn(
-                "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
-                isActive(item.href) ? "bg-accent/10 text-accent" : "text-muted hover:bg-cardhover hover:text-ink"
+                "flex flex-col items-center gap-2 rounded-2xl border border-border px-2 py-4 text-center text-xs font-medium",
+                isActive([item.href]) ? "border-accent bg-accent/10 text-accent" : "text-ink hover:bg-cardhover"
               )}
             >
-              <item.icon size={17} />
+              <item.icon size={22} />
               {item.label}
             </Link>
           ))}
-          <div className="flex items-center justify-between px-3 pt-3">
-            <span className="text-xs text-faint">Theme</span>
+        </div>
+        <div className="mt-4 space-y-3">
+          <DemoNote />
+          <div className="flex items-center justify-between px-1">
+            <span className="text-xs text-muted">Light / dark</span>
             <ThemeToggle />
           </div>
         </div>

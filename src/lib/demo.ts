@@ -64,6 +64,8 @@ export async function seedDemo(): Promise<void> {
     type: Txn["type"], amountInr: number, date: Date, description: string,
     opts: Partial<Txn> = {},
   ) => {
+    // the current month is only partly over — never create future-dated demo rows
+    if (date > new Date()) return;
     txns.push({
       id: uid(), type, amount: Math.round(amountInr * 100), date: date.toISOString(),
       description, accountId: hdfc.id, tags: [], isDemo: true, createdAt: now, ...opts,

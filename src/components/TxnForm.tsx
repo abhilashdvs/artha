@@ -6,6 +6,8 @@ import { toPaise } from "@/lib/money";
 import { todayDateInput } from "@/lib/dates";
 import { Btn, Field, Input, Select, Textarea } from "./ui";
 import { format, parseISO } from "date-fns";
+import { ChevronDown } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 // ─────────────────────────────────────────────────────────────
 // Shared transaction editor. Used by QuickAdd, Transactions page
@@ -49,7 +51,11 @@ export function TxnForm({
   const [description, setDescription] = useState(initial?.description ?? "");
   const [merchant, setMerchant] = useState(initial?.merchant ?? "");
   const [categoryId, setCategoryId] = useState(initial?.categoryId ?? "");
-  const [accountId, setAccountId] = useState(initial?.accountId ?? "");
+  const [accountId, setAccountId] = useState(
+    initial?.accountId ??
+      (accounts.find((a) => a.isActive && a.type === "bank") ?? accounts.find((a) => a.isActive))?.id ??
+      ""
+  );
   const [toAccountId, setToAccountId] = useState(initial?.toAccountId ?? "");
   const [paymentMethodId, setPaymentMethodId] = useState(initial?.paymentMethodId ?? "");
   const [loanId, setLoanId] = useState(fixedLoanId ?? initial?.loanId ?? "");
@@ -57,6 +63,10 @@ export function TxnForm({
   const [notes, setNotes] = useState(initial?.notes ?? "");
   const [tagsStr, setTagsStr] = useState((initial?.tags ?? []).join(", "));
   const [error, setError] = useState<string | null>(null);
+  // optional fields stay folded away unless the transaction already uses them
+  const [showDetails, setShowDetails] = useState(
+    Boolean(initial?.merchant || initial?.notes || initial?.tags?.length || initial?.paymentMethodId)
+  );
   const [busy, setBusy] = useState(false);
 
   const activeAccounts = useMemo(() => accounts.filter((a) => a.isActive), [accounts]);
@@ -114,7 +124,7 @@ export function TxnForm({
     const parsedDate = new Date(date);
     if (isNaN(parsedDate.getTime())) return setError("Pick a valid date & time.");
     if (needsLoan && !loanId) return setError("Link this to a person/loan. Create one on the Lending page first.");
-    if (!description.trim()) return setError("Add a short description.");
+    if (!description.trim()) return setError("Add a short description (what was it for?).");
     setBusy(true);
     try {
       await onSubmit({
@@ -138,65 +148,65 @@ export function TxnForm({
   }
 
   const meta = TXN_TYPE_META[type];
+  const mainTypes: TxnType[] = ["expense", "income", "transfer"];
+  const isOtherType = !mainTypes.includes(type);
 
   return (
-    <form onSubmit={submit} className="space-y-3">
+    <form onSubmit={submit} className="space-y-4">
       {!fixedType && (
-        <Field label="Type">
-          <Select value={type} onChange={(e) => setType(e.target.value as TxnType)}>
-            {Object.entries(TXN_TYPE_META).map(([k, v]) => (
-              <option key={k} value={k}>{v.label}</option>
+        <div>
+          <div className="grid grid-cols-4 gap-1 rounded-xl bg-cardhover p-1">
+            {mainTypes.map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setType(t)}
+                className={cn(
+                  "rounded-lg py-2 text-sm font-medium transition-colors",
+                  type === t ? "bg-card text-ink shadow-card" : "text-muted hover:text-ink"
+                )}
+              >
+                {t === "transfer" ? "Transfer" : TXN_TYPE_META[t].label}
+              </button>
             ))}
-          </Select>
-          {meta.help && <span className="mt-1 block text-[11px] text-faint">{meta.help}</span>}
-        </Field>
+            <select
+              aria-label="Other transaction types"
+              value={isOtherType ? type : ""}
+              onChange={(e) => e.target.value && setType(e.target.value as TxnType)}
+              className={cn(
+                "w-full min-w-0 cursor-pointer appearance-none rounded-lg bg-transparent px-1 py-2 text-center text-sm font-medium focus:outline-none",
+                isOtherType ? "bg-card text-ink shadow-card" : "text-muted"
+              )}
+            >
+              <option value="">More ▾</option>
+              {(Object.keys(TXN_TYPE_META) as TxnType[]).filter((t) => !mainTypes.includes(t)).map((t) => (
+                <option key={t} value={t}>{TXN_TYPE_META[t].label}</option>
+              ))}
+            </select>
+          </div>
+          {meta.help && <p className="mt-1.5 text-[11px] text-muted">{isOtherType && <b className="text-ink">{meta.label}: </b>}{meta.help}</p>}
+        </div>
       )}
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <Field label="Amount (₹)">
-          <Input inputMode="decimal" placeholder="0.00" value={amountStr} onChange={(e) => setAmountStr(e.target.value)} autoFocus />
-        </Field>
-        <Field label="Date & time">
-          <Input type="datetime-local" required value={date} max={`${todayDateInput()}T23:59`} onChange={(e) => setDate(e.target.value)} />
-        </Field>
+      <div className="flex items-baseline gap-2 border-b border-border pb-2">
+        <span className="text-2xl font-semibold text-muted">₹</span>
+        <input
+          inputMode="decimal"
+          placeholder="0"
+          aria-label="Amount"
+          value={amountStr}
+          onChange={(e) => setAmountStr(e.target.value)}
+          autoFocus
+          className="tnum w-full bg-transparent text-3xl font-bold text-ink placeholder:text-faint focus:outline-none"
+        />
       </div>
 
-      <Field label="Description">
-        <Input placeholder="e.g. Dinner at Truffles" value={description} onChange={(e) => setDescription(e.target.value)} />
+      <Field label="What was it for?">
+        <Input placeholder={type === "income" ? "e.g. Salary" : "e.g. Dinner at Truffles"} value={description} onChange={(e) => setDescription(e.target.value)} />
       </Field>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <Field label={type === "income" || type === "lend_repayment" || type === "borrow" || type === "refund" ? "Received into" : "Paid from"}>
-          <Select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
-            <option value="">Select account…</option>
-            {fromAccounts.map((a) => (
-              <option key={a.id} value={a.id}>{a.name}</option>
-            ))}
-          </Select>
-        </Field>
-        {needsTo ? (
-          <Field label={type === "cc_payment" ? "Credit card" : "To account"}>
-            <Select value={toAccountId} onChange={(e) => setToAccountId(e.target.value)}>
-              <option value="">Select…</option>
-              {toAccounts.map((a) => (
-                <option key={a.id} value={a.id}>{a.name}</option>
-              ))}
-            </Select>
-          </Field>
-        ) : (
-          <Field label="Payment method (optional)" hint="UPI apps are rails — the account balance is what moves.">
-            <Select value={paymentMethodId} onChange={(e) => setPaymentMethodId(e.target.value)}>
-              <option value="">None</option>
-              {paymentMethods.filter((p) => p.isActive).map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </Select>
-          </Field>
-        )}
-      </div>
-
-      {needsCategory && (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {needsCategory && (
           <Field label="Category">
             <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
               <option value="">Uncategorised</option>
@@ -210,50 +220,95 @@ export function TxnForm({
               ))}
             </Select>
           </Field>
-          <Field label="Merchant / source">
-            <Input placeholder="e.g. Zomato" value={merchant} onChange={(e) => setMerchant(e.target.value)} />
+        )}
+        <Field label={type === "income" || type === "lend_repayment" || type === "borrow" || type === "refund" ? "Received into" : "Paid from"}>
+          <Select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
+            <option value="">Select account…</option>
+            {fromAccounts.map((a) => (
+              <option key={a.id} value={a.id}>{a.name}</option>
+            ))}
+          </Select>
+        </Field>
+        {needsTo && (
+          <Field label={type === "cc_payment" ? "Credit card" : "To account"}>
+            <Select value={toAccountId} onChange={(e) => setToAccountId(e.target.value)}>
+              <option value="">Select…</option>
+              {toAccounts.map((a) => (
+                <option key={a.id} value={a.id}>{a.name}</option>
+              ))}
+            </Select>
+          </Field>
+        )}
+        {needsLoan && !fixedLoanId && (
+          <Field label="Person">
+            <Select value={loanId} onChange={(e) => setLoanId(e.target.value)}>
+              <option value="">Select person…</option>
+              {loans
+                .filter((l) =>
+                  ["lend", "lend_repayment"].includes(type) ? l.direction === "lent" : l.direction === "borrowed"
+                )
+                .map((l) => (
+                  <option key={l.id} value={l.id}>{l.personName}</option>
+                ))}
+            </Select>
+          </Field>
+        )}
+        {type === "investment" && goals.length > 0 && (
+          <Field label="Towards goal (optional)">
+            <Select value={goalId} onChange={(e) => setGoalId(e.target.value)}>
+              <option value="">No goal</option>
+              {goals.map((g) => (
+                <option key={g.id} value={g.id}>{g.name}</option>
+              ))}
+            </Select>
+          </Field>
+        )}
+      </div>
+
+      {!showDetails ? (
+        <button
+          type="button"
+          onClick={() => setShowDetails(true)}
+          className="flex items-center gap-1 text-xs font-medium text-accent hover:underline"
+        >
+          <ChevronDown size={14} /> Add date, merchant, notes…
+        </button>
+      ) : (
+        <div className="space-y-3 rounded-xl border border-border p-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Field label="Date & time">
+              <Input type="datetime-local" required value={date} max={`${todayDateInput()}T23:59`} onChange={(e) => setDate(e.target.value)} />
+            </Field>
+            {needsCategory && (
+              <Field label="Merchant / source">
+                <Input placeholder="e.g. Zomato" value={merchant} onChange={(e) => setMerchant(e.target.value)} />
+              </Field>
+            )}
+            {!needsTo && (
+              <Field label="Paid using (optional)" hint="UPI app or card — the account balance is what moves.">
+                <Select value={paymentMethodId} onChange={(e) => setPaymentMethodId(e.target.value)}>
+                  <option value="">Not specified</option>
+                  {paymentMethods.filter((p) => p.isActive).map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </Select>
+              </Field>
+            )}
+            <Field label="Tags (optional)">
+              <Input placeholder="work, trip, friends" value={tagsStr} onChange={(e) => setTagsStr(e.target.value)} />
+            </Field>
+          </div>
+          <Field label="Notes (optional)">
+            <Textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
           </Field>
         </div>
       )}
 
-      {needsLoan && !fixedLoanId && (
-        <Field label="Person / loan">
-          <Select value={loanId} onChange={(e) => setLoanId(e.target.value)}>
-            <option value="">Select person…</option>
-            {loans
-              .filter((l) =>
-                ["lend", "lend_repayment"].includes(type) ? l.direction === "lent" : l.direction === "borrowed"
-              )
-              .map((l) => (
-                <option key={l.id} value={l.id}>{l.personName}</option>
-              ))}
-          </Select>
-        </Field>
-      )}
-
-      {type === "investment" && goals.length > 0 && (
-        <Field label="Link to goal (optional)">
-          <Select value={goalId} onChange={(e) => setGoalId(e.target.value)}>
-            <option value="">No goal</option>
-            {goals.map((g) => (
-              <option key={g.id} value={g.id}>{g.name}</option>
-            ))}
-          </Select>
-        </Field>
-      )}
-
-      <Field label="Tags (comma separated, optional)">
-        <Input placeholder="work, trip, friends" value={tagsStr} onChange={(e) => setTagsStr(e.target.value)} />
-      </Field>
-      <Field label="Notes (optional)">
-        <Textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
-      </Field>
-
       {error && <p className="rounded-xl bg-danger/10 px-3 py-2 text-xs font-medium text-danger">{error}</p>}
 
-      <div className="flex justify-end gap-2 pt-1">
-        {onCancel && <Btn type="button" variant="ghost" onClick={onCancel}>Cancel</Btn>}
-        <Btn type="submit" disabled={busy}>{busy ? "Saving…" : submitLabel}</Btn>
+      <div className="flex gap-2 pt-1">
+        {onCancel && <Btn type="button" variant="ghost" onClick={onCancel} className="flex-1 sm:flex-none">Cancel</Btn>}
+        <Btn type="submit" disabled={busy} className="flex-1 py-2.5 sm:ml-auto sm:flex-none">{busy ? "Saving…" : submitLabel}</Btn>
       </div>
     </form>
   );
