@@ -151,3 +151,13 @@ supabase/
 - [ ] Recurring transaction auto-creation from subscriptions
 - [x] PWA / offline install
 - [x] Vercel deployment
+
+## License
+
+[MIT](LICENSE) © 2026 Abhilash Dontula
+
+Artha is built on open-source libraries (Next.js, React, Supabase JS, Dexie, Recharts,
+Tailwind CSS, date-fns, lucide-react, papaparse, SheetJS and others), each under its own
+permissive licence (MIT, Apache-2.0 or ISC). See each package in `node_modules` for its
+licence text.
+

@@ -3,6 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "description": "Artha \u2014 Personal Finance & Expense Intelligence (India, INR)",
+  "author": "Abhilash Dontula",
+  "license": "MIT",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
