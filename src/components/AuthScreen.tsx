@@ -150,7 +150,18 @@ export function AuthScreen() {
         <div className="rounded-2xl border border-border bg-card p-6 shadow-card">
           <AuthForm />
         </div>
-        <p className="mt-6 text-center text-[11px] text-faint">Your data is private to your account.</p>
+        <div className="mt-8 border-t border-border pt-5 text-center">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted">
+            What does Artha mean?
+          </p>
+          <p className="mt-2 text-sm leading-relaxed text-muted">
+            <span className="font-medium text-ink">Artha (अर्थ)</span> is Sanskrit for{" "}
+            <span className="text-ink">wealth</span> — and also for <span className="text-ink">meaning</span> and{" "}
+            <span className="text-ink">purpose</span>. In Indian philosophy it is one of the four aims of a good
+            life: earning and managing money wisely.
+          </p>
+        </div>
+        <p className="mt-5 text-center text-[11px] text-faint">Your data is private to your account.</p>
       </div>
     </div>
   );
