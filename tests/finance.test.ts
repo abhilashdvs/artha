@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { format } from "date-fns";
 import {
   budgetProgress, computeBalances, expenseTotal, incomeTotal, loanSummaries, netWorth, savingsRateOf,
-  subscriptionMonthlyCost, subscriptionYearlyCost,
+  subscriptionMonthlyCost, subscriptionYearlyCost, radarLevel,
 } from "../src/lib/finance";
 import { categoryBreakdown, needsWantsSplit } from "../src/lib/analytics";
 import { formatINR, toPaise } from "../src/lib/money";
@@ -167,4 +167,20 @@ test("sync: category 'need' null is preserved and date-only fields stay yyyy-MM-
   assert.equal(cat.isNeed, null);
   const sub = __test.toLocal("subscriptions", { id: "s", name: "Gym", amount: 2300_00, cycle: "monthly", next_due_date: "2026-11-09", is_active: true, created_at: now });
   assert.equal(sub.nextDueDate, "2026-11-09");
+});
+
+test("Subscription Radar: red under 3 days (incl. overdue), yellow within 10, clear after", () => {
+  assert.equal(radarLevel(-1), "red");
+  assert.equal(radarLevel(0), "red");
+  assert.equal(radarLevel(2), "red");
+  assert.equal(radarLevel(3), "yellow");
+  assert.equal(radarLevel(10), "yellow");
+  assert.equal(radarLevel(11), "clear");
+});
+
+test("sync: subscription payment method is mapped to the cloud and back", () => {
+  const sub = { id: "s", name: "Netflix", amount: 64900, cycle: "monthly", nextDueDate: "2026-11-14", paymentMethodId: "pm-1", accountId: "a-1", isActive: true, createdAt: now };
+  const remote = __test.toRemote("subscriptions", sub, "u1");
+  assert.equal(remote.payment_method_id, "pm-1");
+  assert.equal(__test.toLocal("subscriptions", remote).paymentMethodId, "pm-1");
 });

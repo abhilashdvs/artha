@@ -9,7 +9,7 @@ import GoalsPage from "../goals/page";
 
 const TABS = [
   { key: "budgets", label: "Budgets", Page: BudgetsPage },
-  { key: "bills", label: "Bills & subscriptions", Page: SubscriptionsPage },
+  { key: "bills", label: "Subscription Radar", Page: SubscriptionsPage },
   { key: "goals", label: "Goals", Page: GoalsPage },
 ] as const;
 

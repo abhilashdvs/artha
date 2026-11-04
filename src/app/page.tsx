@@ -11,7 +11,7 @@ import {
 import {
   useAccounts, useBalances, useBudgets, useCategories, useLoans, useSubscriptions, useTxns,
 } from "@/lib/hooks";
-import { expenseTotal, incomeTotal, netWorth } from "@/lib/finance";
+import { expenseTotal, incomeTotal, netWorth, radarLevel } from "@/lib/finance";
 import { filterByRange, fmtDay } from "@/lib/dates";
 import { formatINR, pct } from "@/lib/money";
 import { categoryBreakdown } from "@/lib/analytics";
@@ -273,7 +273,7 @@ export default function HomePage() {
 
           {d.isCurrent && (
             <Card>
-              <SectionHead title="Due soon" href="/plan?tab=bills" />
+              <SectionHead title="Subscription Radar" href="/plan?tab=bills" linkLabel="Open" />
               {d.dueSoon.length === 0 ? (
                 <p className="py-4 text-center text-sm text-muted">Nothing due in the next 10 days.</p>
               ) : (
@@ -281,11 +281,11 @@ export default function HomePage() {
                   {d.dueSoon.map((s) => (
                     <li key={s.id} className="flex items-center justify-between gap-3">
                       <span className="flex min-w-0 items-center gap-2.5">
-                        <CalendarClock size={16} className={cn("shrink-0", s.daysLeft <= 2 ? "text-danger" : "text-muted")} />
+                        <CalendarClock size={16} className={cn("shrink-0", radarLevel(s.daysLeft) === "red" ? "text-danger" : "text-warn")} />
                         <span className="min-w-0">
                           <span className="block truncate text-sm text-ink">{s.name}</span>
-                          <span className={cn("block text-[11px]", s.daysLeft <= 2 ? "text-danger" : "text-muted")}>
-                            {s.daysLeft < 0 ? `overdue by ${-s.daysLeft}d` : s.daysLeft === 0 ? "due today" : `in ${s.daysLeft} days · ${fmtDay(s.nextDueDate)}`}
+                          <span className={cn("block text-[11px]", radarLevel(s.daysLeft) === "red" ? "text-danger" : "text-warn")}>
+                            {s.daysLeft < 0 ? `overdue by ${-s.daysLeft}d` : s.daysLeft === 0 ? "due today" : `${s.daysLeft === 1 ? "tomorrow" : `in ${s.daysLeft} days`} · ${fmtDay(s.nextDueDate)}`}
                           </span>
                         </span>
                       </span>

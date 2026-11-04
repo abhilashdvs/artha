@@ -60,7 +60,7 @@ const TABLES: Record<LocalTable, { remote: string; fields: string[] }> = {
   budgets: { remote: "budgets", fields: ["categoryId", "amount", "isActive"] },
   subscriptions: {
     remote: "subscriptions",
-    fields: ["name", "amount", "cycle", "nextDueDate", "accountId", "categoryId", "isActive", "notes"],
+    fields: ["name", "amount", "cycle", "nextDueDate", "accountId", "paymentMethodId", "categoryId", "isActive", "notes"],
   },
   goals: { remote: "goals", fields: ["name", "targetAmount", "currentAmount", "targetDate", "notes", "isCompleted"] },
 };

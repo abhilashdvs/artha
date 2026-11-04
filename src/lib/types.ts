@@ -146,7 +146,10 @@ export interface Subscription {
   cycle: BillingCycle;
   /** yyyy-MM-dd */
   nextDueDate: string;
+  /** account the money actually leaves (balance source) */
   accountId?: ID;
+  /** how it's paid: UPI app, credit/debit card, net banking… (never holds a balance) */
+  paymentMethodId?: ID;
   categoryId?: ID;
   isActive: boolean;
   notes?: string;

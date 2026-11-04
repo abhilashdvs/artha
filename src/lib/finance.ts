@@ -238,3 +238,14 @@ export function subscriptionMonthlyCost(subs: Subscription[]): number {
 export function subscriptionYearlyCost(subs: Subscription[]): number {
   return subs.reduce((s, x) => s + annualCost(x), 0);
 }
+
+// ── Subscription Radar ────────────────────────────────────────
+
+export type RadarLevel = "red" | "yellow" | "clear";
+
+/** Due in under 3 days (or overdue) → red; within 10 days → yellow; otherwise clear. */
+export function radarLevel(daysLeft: number): RadarLevel {
+  if (daysLeft < 3) return "red";
+  if (daysLeft <= 10) return "yellow";
+  return "clear";
+}

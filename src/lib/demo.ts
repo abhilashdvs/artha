@@ -205,7 +205,8 @@ export async function seedDemo(): Promise<void> {
     { id: uid(), name: "ACT Fibernet", amount: 99900, cycle: "monthly", nextDueDate: due(addDays(new Date(), 2)), accountId: hdfc.id, categoryId: catId("Utilities & Bills"), isActive: true, isDemo: true, createdAt: now },
     { id: uid(), name: "House Rent", amount: 2800000, cycle: "monthly", nextDueDate: due(addDays(new Date(), 5)), accountId: hdfc.id, categoryId: catId("Rent"), isActive: true, isDemo: true, createdAt: now },
   ];
-  await db.subscriptions.bulkAdd(subs);
+  // link each demo subscription to the UPI app / card that pays it
+  await db.subscriptions.bulkAdd(subs.map((x) => ({ ...x, paymentMethodId: x.accountId ? pmFor(x.accountId) : undefined })));
 
   // ── Budgets ──
   await db.budgets.bulkAdd([

@@ -118,12 +118,16 @@ create table if not exists public.subscriptions (
   cycle         text not null check (cycle in ('weekly','monthly','quarterly','yearly')),
   next_due_date date not null,
   account_id    uuid,
+  payment_method_id uuid,
   category_id   uuid,
   is_active     boolean not null default true,
   notes         text,
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now()
 );
+
+-- added after first release (safe to re-run)
+alter table public.subscriptions add column if not exists payment_method_id uuid;
 
 -- ── goals ────────────────────────────────────────────────────
 create table if not exists public.goals (
