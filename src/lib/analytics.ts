@@ -53,9 +53,12 @@ export function categoryBreakdown(txns: Txn[], categories: Category[]): Category
     const sign = t.type === "expense" ? 1 : -1;
     byCat.set(key, (byCat.get(key) ?? 0) + sign * t.amount);
   }
-  const total = [...byCat.values()].reduce((s, v) => s + v, 0);
-  return [...byCat.entries()]
-    .map(([id, value]) => {
+  // Clamp net-negative categories (refunds > spend) to 0 so they can't
+  // shrink the total and push every other share above its true value.
+  const rows = [...byCat.entries()].map(([id, value]) => ({ id, value: Math.max(value, 0) }));
+  const total = rows.reduce((s, r) => s + r.value, 0);
+  return rows
+    .map(({ id, value }) => {
       const cat = categories.find((c) => c.id === id);
       return {
         categoryId: id,
@@ -116,7 +119,7 @@ export function dailySpendMap(txns: Txn[], days = 30): { date: string; label: st
   const index = new Map(buckets.map((b, i) => [b.date, i]));
   for (const t of txns) {
     if (t.type !== "expense") continue;
-    const i = index.get(t.date.slice(0, 10));
+    const i = index.get(format(parseISO(t.date), "yyyy-MM-dd")); // local day key (not UTC slice)
     if (i !== undefined) buckets[i].total += t.amount;
   }
   return buckets;
@@ -149,8 +152,8 @@ export interface SpendingAverages {
 export function spendingAverages(txns: Txn[]): SpendingAverages {
   const expenses = txns.filter((t) => t.type === "expense");
   if (expenses.length === 0) return { daily: 0, weekly: 0, monthly: 0, daysWithSpend: 0 };
-  const days = new Set(expenses.map((t) => t.date.slice(0, 10)));
-  const months = new Set(expenses.map((t) => t.date.slice(0, 7)));
+  const days = new Set(expenses.map((t) => format(parseISO(t.date), "yyyy-MM-dd")));
+  const months = new Set(expenses.map((t) => monthKeyOf(t.date)));
   const total = expenses.reduce((s, t) => s + t.amount, 0);
   return {
     daily: Math.round(total / days.size),
@@ -201,30 +204,32 @@ export function paymentMethodSplit(txns: Txn[], methods: PaymentMethod[]): Payme
     .sort((a, b) => b.value - a.value);
 }
 
-/** Needs vs wants vs unspecified expense split. */
+/** Needs vs wants vs unspecified expense split (refunds netted into their bucket). */
 export function needsWantsSplit(txns: Txn[], categories: Category[]): { need: number; want: number; other: number } {
   const out = { need: 0, want: 0, other: 0 };
   for (const t of txns) {
-    if (t.type !== "expense") continue;
+    if (t.type !== "expense" && t.type !== "refund") continue;
+    const sign = t.type === "expense" ? 1 : -1;
     const cat = categories.find((c) => c.id === t.categoryId);
-    if (cat?.isNeed === true) out.need += t.amount;
-    else if (cat?.isNeed === false) out.want += t.amount;
-    else out.other += t.amount;
+    if (cat?.isNeed === true) out.need += sign * t.amount;
+    else if (cat?.isNeed === false) out.want += sign * t.amount;
+    else out.other += sign * t.amount;
   }
-  return out;
+  return { need: Math.max(out.need, 0), want: Math.max(out.want, 0), other: Math.max(out.other, 0) };
 }
 
-/** Fixed vs variable expense split (by category flow). */
+/** Fixed vs variable expense split by category flow (refunds netted into their bucket). */
 export function fixedVariableSplit(txns: Txn[], categories: Category[]): { fixed: number; variable: number; other: number } {
   const out = { fixed: 0, variable: 0, other: 0 };
   for (const t of txns) {
-    if (t.type !== "expense") continue;
+    if (t.type !== "expense" && t.type !== "refund") continue;
+    const sign = t.type === "expense" ? 1 : -1;
     const cat = categories.find((c) => c.id === t.categoryId);
-    if (cat?.flow === "fixed") out.fixed += t.amount;
-    else if (cat?.flow === "variable") out.variable += t.amount;
-    else out.other += t.amount;
+    if (cat?.flow === "fixed") out.fixed += sign * t.amount;
+    else if (cat?.flow === "variable") out.variable += sign * t.amount;
+    else out.other += sign * t.amount;
   }
-  return out;
+  return { fixed: Math.max(out.fixed, 0), variable: Math.max(out.variable, 0), other: Math.max(out.other, 0) };
 }
 
 /** Spend for a specific month offset (0 = current). Used by insights/health score. */

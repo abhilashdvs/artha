@@ -3,11 +3,11 @@
 import { useMemo, useState } from "react";
 import { useAccounts, useBudgets, useCategories, useLoans, useTxns } from "@/lib/hooks";
 import {
-  categoryBreakdown, dailySpendMap, dayOfWeekSpend, fixedVariableSplit,
+  categoryBreakdown, dayOfWeekSpend, fixedVariableSplit,
   merchantTotals, monthSeries, needsWantsSplit, spendingAverages,
 } from "@/lib/analytics";
 import { generateInsights } from "@/lib/insights";
-import { healthScoreHistory } from "@/lib/healthScore";
+import { activeWeights, healthScoreHistory } from "@/lib/healthScore";
 import { filterByRange, rangeForPreset, type DatePreset, type DateRange } from "@/lib/dates";
 import { formatINR, pct } from "@/lib/money";
 import { Badge, Card, CardTitle, Empty } from "@/components/ui";
@@ -45,7 +45,7 @@ export default function AnalyticsPage() {
       nw: needsWantsSplit(ranged, categories),
       insights: generateInsights(txns, categories, budgets, loans),
       scores: healthScoreHistory(6, { txns, budgets, accounts, loans, categories }),
-      daily: dailySpendMap(ranged),
+      weights: activeWeights(),
     };
   }, [txns, categories, accounts, budgets, loans, ranged]);
 
@@ -85,10 +85,13 @@ export default function AnalyticsPage() {
       <div className="grid gap-4 xl:grid-cols-2">
         <Card>
           <CardTitle title="Spending Trend" sub="Last 6 months" />
-          <TrendChart data={derived.series} dataKey="expense" color="#f43f5e" />
+          <TrendChart data={derived.series} dataKey="expense" color="var(--danger)" />
         </Card>
         <Card>
-          <CardTitle title="Financial Health Score" sub="0–100 · savings 40, budgets 25, debt 20, lending 15" />
+          <CardTitle
+            title="Financial Health Score"
+            sub={`0–100 · savings ${derived.weights.savings}, budgets ${derived.weights.budget}, debt ${derived.weights.debt}, lending ${derived.weights.lending}`}
+          />
           <ScoreLineChart data={derived.scores} />
           <p className="mt-1 text-[11px] text-faint">
             Score drops if you overspend budgets, carry credit card debt, or have long-pending lendings.
@@ -130,9 +133,9 @@ export default function AnalyticsPage() {
             <>
               <DonutChart
                 data={[
-                  { name: "Needs", value: derived.nw.need, color: "#10b981" },
-                  { name: "Wants", value: derived.nw.want, color: "#f59e0b" },
-                  ...(derived.nw.other > 0 ? [{ name: "Unspecified", value: derived.nw.other, color: "#64748b" }] : []),
+                  { name: "Needs", value: derived.nw.need, color: "var(--good)" },
+                  { name: "Wants", value: derived.nw.want, color: "var(--warn)" },
+                  ...(derived.nw.other > 0 ? [{ name: "Unspecified", value: derived.nw.other, color: "var(--muted)" }] : []),
                 ]}
               />
               <p className="text-center text-xs text-muted">
@@ -148,9 +151,9 @@ export default function AnalyticsPage() {
           {derived.fixedVar.fixed + derived.fixedVar.variable > 0 ? (
             <DonutChart
               data={[
-                { name: "Fixed (rent, EMI, bills…)", value: derived.fixedVar.fixed, color: "#6366f1" },
-                { name: "Variable", value: derived.fixedVar.variable, color: "#14b8a6" },
-                ...(derived.fixedVar.other > 0 ? [{ name: "Unspecified", value: derived.fixedVar.other, color: "#64748b" }] : []),
+                { name: "Fixed (rent, EMI, bills…)", value: derived.fixedVar.fixed, color: "var(--accent)" },
+                { name: "Variable", value: derived.fixedVar.variable, color: "var(--good)" },
+                ...(derived.fixedVar.other > 0 ? [{ name: "Unspecified", value: derived.fixedVar.other, color: "var(--muted)" }] : []),
               ]}
             />
           ) : (

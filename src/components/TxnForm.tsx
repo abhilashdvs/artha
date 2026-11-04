@@ -87,10 +87,20 @@ export function TxnForm({
     if (pm?.linkedAccountId && pm.linkedAccountId !== accountId) setAccountId(pm.linkedAccountId);
   }, [paymentMethodId, paymentMethods, accountId]);
 
-  // reset destination when it stops being valid
+  // reset destination whenever the type changes (valid options differ per type)
   useEffect(() => {
-    if (!needsTo) setToAccountId("");
-  }, [needsTo]);
+    setToAccountId("");
+  }, [type]);
+
+  // clear destination if it points at the source account or is invalid for the type
+  useEffect(() => {
+    if (!toAccountId) return;
+    if (toAccountId === accountId) setToAccountId("");
+    else if (type === "cc_payment") {
+      const dest = accounts.find((a) => a.id === toAccountId);
+      if (dest?.type !== "credit_card") setToAccountId("");
+    }
+  }, [accountId, toAccountId, type, accounts]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -99,6 +109,10 @@ export function TxnForm({
     if (amount <= 0) return setError("Enter an amount greater than zero.");
     if (!accountId) return setError("Choose an account.");
     if (needsTo && !toAccountId) return setError("Choose the destination account.");
+    if (needsTo && accountId === toAccountId) return setError("Source and destination accounts must be different.");
+    if (!date) return setError("Pick a date & time.");
+    const parsedDate = new Date(date);
+    if (isNaN(parsedDate.getTime())) return setError("Pick a valid date & time.");
     if (needsLoan && !loanId) return setError("Link this to a person/loan. Create one on the Lending page first.");
     if (!description.trim()) return setError("Add a short description.");
     setBusy(true);
@@ -106,7 +120,7 @@ export function TxnForm({
       await onSubmit({
         type,
         amount,
-        date: new Date(date).toISOString(),
+        date: parsedDate.toISOString(),
         description: description.trim(),
         merchant: merchant.trim() || undefined,
         categoryId: needsCategory && categoryId ? categoryId : undefined,
@@ -138,12 +152,12 @@ export function TxnForm({
         </Field>
       )}
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field label="Amount (₹)">
           <Input inputMode="decimal" placeholder="0.00" value={amountStr} onChange={(e) => setAmountStr(e.target.value)} autoFocus />
         </Field>
         <Field label="Date & time">
-          <Input type="datetime-local" value={date} max={`${todayDateInput()}T23:59`} onChange={(e) => setDate(e.target.value)} />
+          <Input type="datetime-local" required value={date} max={`${todayDateInput()}T23:59`} onChange={(e) => setDate(e.target.value)} />
         </Field>
       </div>
 
@@ -151,7 +165,7 @@ export function TxnForm({
         <Input placeholder="e.g. Dinner at Truffles" value={description} onChange={(e) => setDescription(e.target.value)} />
       </Field>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field label={type === "income" || type === "lend_repayment" || type === "borrow" || type === "refund" ? "Received into" : "Paid from"}>
           <Select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
             <option value="">Select account…</option>
@@ -182,7 +196,7 @@ export function TxnForm({
       </div>
 
       {needsCategory && (
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Category">
             <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
               <option value="">Uncategorised</option>

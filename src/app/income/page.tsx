@@ -8,7 +8,7 @@ import { incomeTotal, investedTotal, expenseTotal } from "@/lib/finance";
 import { Card, CardTitle, Empty, Stat } from "@/components/ui";
 import { DateFilter } from "@/components/DateFilter";
 import { TrendChart } from "@/components/charts";
-import { startOfMonth, format } from "date-fns";
+import { startOfMonth } from "date-fns";
 
 export default function IncomePage() {
   const txns = useTxns();
@@ -76,15 +76,15 @@ export default function IncomePage() {
           <div className="grid gap-4 xl:grid-cols-2">
             <Card>
               <CardTitle title="Income by Month" sub="Selected period" />
-              <TrendChart data={derived.monthly} dataKey="income" color="#10b981" name="Income" />
+              <TrendChart data={derived.monthly} dataKey="income" color="var(--good)" name="Income" />
             </Card>
             <Card>
               <CardTitle title="Income Sources" sub="Selected period" />
               <ul className="space-y-2">
                 {derived.sources.map((s) => (
-                  <li key={s.name} className="flex items-center justify-between text-sm">
-                    <span className="text-ink">{s.name}</span>
-                    <span className="tnum font-semibold">
+                  <li key={s.name} className="flex items-center justify-between gap-3 text-sm">
+                    <span className="min-w-0 truncate text-ink" title={s.name}>{s.name}</span>
+                    <span className="tnum shrink-0 font-semibold">
                       {formatINR(s.total)}
                       <span className="ml-2 text-[11px] font-normal text-muted">{pct(s.total, derived.total).toFixed(0)}%</span>
                     </span>
@@ -98,16 +98,16 @@ export default function IncomePage() {
             <CardTitle title="Income Entries" sub={`${derived.incomeTxns.length} in range`} />
             <ul className="divide-y divide-border">
               {derived.incomeTxns.map((t) => (
-                <li key={t.id} className="flex items-center justify-between py-2.5 text-sm">
-                  <div>
-                    <p className="font-medium text-ink">{t.description}</p>
-                    <p className="text-xs text-muted">
+                <li key={t.id} className="flex items-center justify-between gap-3 py-2.5 text-sm">
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-ink" title={t.description}>{t.description}</p>
+                    <p className="truncate text-xs text-muted" title={`${fmtDay(t.date)}${t.merchant ? ` · ${t.merchant}` : ""}${t.categoryId ? ` · ${categories?.find((c) => c.id === t.categoryId)?.name ?? ""}` : ""}`}>
                       {fmtDay(t.date)}
                       {t.merchant ? ` · ${t.merchant}` : ""}
                       {t.categoryId ? ` · ${categories?.find((c) => c.id === t.categoryId)?.name}` : ""}
                     </p>
                   </div>
-                  <span className="tnum font-semibold text-good">+{formatINR(t.amount)}</span>
+                  <span className="tnum shrink-0 font-semibold text-good">+{formatINR(t.amount)}</span>
                 </li>
               ))}
             </ul>

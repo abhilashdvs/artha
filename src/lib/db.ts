@@ -104,6 +104,9 @@ async function applyGoalEffect(t: Txn, sign: 1 | -1): Promise<void> {
 }
 
 export async function addTxn(t: Omit<Txn, "id" | "createdAt">): Promise<Txn> {
+  if ((t.type === "transfer" || t.type === "cc_payment") && t.accountId && t.accountId === t.toAccountId) {
+    throw new Error("Source and destination accounts must be different.");
+  }
   const txn: Txn = { ...t, id: uid(), createdAt: nowISO() };
   await db.transaction("rw", [db.transactions, db.goals], async () => {
     await db.transactions.add(txn);
@@ -116,8 +119,11 @@ export async function updateTxn(id: string, patch: Partial<Omit<Txn, "id" | "cre
   await db.transaction("rw", [db.transactions, db.goals], async () => {
     const old = await db.transactions.get(id);
     if (!old) return;
-    await applyGoalEffect(old, -1);
     const next: Txn = { ...old, ...patch, id };
+    if ((next.type === "transfer" || next.type === "cc_payment") && next.accountId && next.accountId === next.toAccountId) {
+      throw new Error("Source and destination accounts must be different.");
+    }
+    await applyGoalEffect(old, -1);
     await db.transactions.put(next);
     await applyGoalEffect(next, 1);
   });
@@ -297,19 +303,25 @@ export async function updateLoan(id: string, patch: Partial<Omit<Loan, "id" | "c
 }
 
 export async function deleteLoan(id: string): Promise<void> {
-  await db.loans.delete(id);
+  await db.transaction("rw", [db.loans, db.transactions], async () => {
+    // Detach linked transactions so they don't keep dangling loanId refs.
+    await db.transactions.where("loanId").equals(id).modify((t) => {
+      t.loanId = undefined;
+    });
+    await db.loans.delete(id);
+  });
 }
 
 // ── First-run defaults ────────────────────────────────────────
 
 let seeded = false;
 
-/** Seed default categories + payment methods once per database. */
-export async function seedDefaults(): Promise<void> {
-  if (seeded) return;
+/** Seed default categories + payment methods. `force` bypasses the in-memory once-per-session guard (used after wipe-all). */
+export async function seedDefaults(force = false): Promise<void> {
+  if (seeded && !force) return;
   seeded = true;
   const count = await db.categories.count();
-  if (count > 0) return;
+  if (count > 0) return; // never seed into a non-empty table
 
   const now = nowISO();
   const cat = (

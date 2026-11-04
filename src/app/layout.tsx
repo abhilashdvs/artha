@@ -20,7 +20,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
           <DbInit />
           <Sidebar />
-          <main className="pb-24 lg:pb-10 lg:pl-60">
+          {/* pb-36 on mobile clears the QuickAdd FAB (fixed bottom-20 + ~48px height ≈ 128px);
+              lg:pb-10 once the FAB drops to bottom-8 and the MobileNav is hidden */}
+          <main className="pb-36 lg:pb-10 lg:pl-60">
             <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">{children}</div>
           </main>
           <MobileNav />

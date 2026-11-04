@@ -9,18 +9,27 @@ import { fmtDay, todayDateInput } from "@/lib/dates";
 import { Badge, Btn, Card, CardTitle, Empty, Field, Input, Modal, Select } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import type { BillingCycle, Subscription } from "@/lib/types";
-import { addDays, addMonths, addYears, differenceInDays, format, parseISO } from "date-fns";
+import { addDays, addMonths, addYears, differenceInCalendarDays, format, parseISO, startOfToday } from "date-fns";
 import { CalendarClock, Pencil, Plus, Trash2 } from "lucide-react";
 
 const CYCLE_LABEL: Record<BillingCycle, string> = {
   weekly: "Weekly", monthly: "Monthly", quarterly: "Quarterly", yearly: "Yearly",
 };
 
-function nextDue(from: string, cycle: BillingCycle): string {
+function advanceCycle(from: string, cycle: BillingCycle): string {
   const d = parseISO(from);
   const next =
     cycle === "weekly" ? addDays(d, 7) : cycle === "monthly" ? addMonths(d, 1) : cycle === "quarterly" ? addMonths(d, 3) : addYears(d, 1);
   return format(next, "yyyy-MM-dd");
+}
+
+/** Roll a subscription's due date forward by its cycle until it is today or later. */
+function currentDue(nextDueDate: string, cycle: BillingCycle): string {
+  const today = todayDateInput();
+  let d = nextDueDate.slice(0, 10);
+  let guard = 0;
+  while (d < today && guard++ < 500) d = advanceCycle(d, cycle);
+  return d;
 }
 
 export default function SubscriptionsPage() {
@@ -28,6 +37,7 @@ export default function SubscriptionsPage() {
   const accounts = useAccounts();
   const categories = useCategories();
   const [modal, setModal] = useState<Subscription | "new" | null>(null);
+  const [delSub, setDelSub] = useState<Subscription | null>(null);
 
   const derived = useMemo(() => {
     if (!subs) return null;
@@ -35,7 +45,10 @@ export default function SubscriptionsPage() {
     const monthly = subscriptionMonthlyCost(active);
     const yearly = subscriptionYearlyCost(active);
     const upcoming = active
-      .map((s) => ({ ...s, daysLeft: differenceInDays(parseISO(s.nextDueDate), new Date()) }))
+      .map((s) => {
+        const due = currentDue(s.nextDueDate, s.cycle);
+        return { ...s, due, daysLeft: differenceInCalendarDays(parseISO(due), startOfToday()) };
+      })
       .sort((a, b) => a.daysLeft - b.daysLeft);
     return { active, monthly, yearly, upcoming, dailyBurn: yearly / 365 };
   }, [subs]);
@@ -57,19 +70,19 @@ export default function SubscriptionsPage() {
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div className="rounded-2xl border border-border bg-card p-4">
           <p className="text-xs text-muted">Monthly cost</p>
-          <p className="tnum mt-1 text-lg font-bold">{formatINR(derived.monthly)}</p>
+          <p className="tnum mt-1 truncate text-lg font-bold" title={formatINR(derived.monthly)}>{formatINR(derived.monthly)}</p>
         </div>
         <div className="rounded-2xl border border-border bg-card p-4">
           <p className="text-xs text-muted">Yearly cost</p>
-          <p className="tnum mt-1 text-lg font-bold">{formatINR(derived.yearly)}</p>
+          <p className="tnum mt-1 truncate text-lg font-bold" title={formatINR(derived.yearly)}>{formatINR(derived.yearly)}</p>
         </div>
         <div className="rounded-2xl border border-border bg-card p-4">
           <p className="text-xs text-muted">Daily burn</p>
-          <p className="tnum mt-1 text-lg font-bold">{formatINR(Math.round(derived.dailyBurn))}</p>
+          <p className="tnum mt-1 truncate text-lg font-bold" title={formatINR(Math.round(derived.dailyBurn))}>{formatINR(Math.round(derived.dailyBurn))}</p>
         </div>
         <div className="rounded-2xl border border-border bg-card p-4">
           <p className="text-xs text-muted">Active subscriptions</p>
-          <p className="tnum mt-1 text-lg font-bold">{derived.active.length}</p>
+          <p className="tnum mt-1 truncate text-lg font-bold">{derived.active.length}</p>
         </div>
       </div>
 
@@ -95,11 +108,11 @@ export default function SubscriptionsPage() {
                       {s.isDemo && <Badge tone="warn">demo</Badge>}
                       <Badge>{CYCLE_LABEL[s.cycle]}</Badge>
                     </div>
-                    <p className="mt-0.5 text-[11px] text-muted">
-                      {cat?.name ?? "Uncategorised"}{acct ? ` · ${acct.name}` : ""}
+                    <p className="mt-0.5 truncate text-[11px] text-muted" title={`${cat?.name ?? "Uncategorised"}${acct ? ` · ${acct.name}` : ""} · due ${fmtDay(s.due)}`}>
+                      {cat?.name ?? "Uncategorised"}{acct ? ` · ${acct.name}` : ""} · due {fmtDay(s.due)}
                     </p>
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex shrink-0 items-center gap-3">
                     <div className="text-right">
                       <p className="tnum text-sm font-bold">{formatINR(s.amount)}</p>
                       <p className={cn("text-[11px]", dueTone)}>
@@ -107,8 +120,8 @@ export default function SubscriptionsPage() {
                       </p>
                     </div>
                     <div className="flex gap-1">
-                      <button onClick={() => setModal(s)} className="rounded-lg p-1.5 text-muted hover:bg-cardhover hover:text-ink"><Pencil size={13} /></button>
-                      <button onClick={() => deleteSubscription(s.id)} className="rounded-lg p-1.5 text-muted hover:bg-danger/10 hover:text-danger"><Trash2 size={13} /></button>
+                      <button onClick={() => setModal(s)} title="Edit subscription" aria-label="Edit subscription" className="rounded-lg p-2 text-muted hover:bg-cardhover hover:text-ink"><Pencil size={13} /></button>
+                      <button onClick={() => setDelSub(s)} title="Delete subscription" aria-label="Delete subscription" className="rounded-lg p-2 text-muted hover:bg-danger/10 hover:text-danger"><Trash2 size={13} /></button>
                     </div>
                   </div>
                 </li>
@@ -119,6 +132,23 @@ export default function SubscriptionsPage() {
       )}
 
       <SubModal open={modal !== null} initial={modal === "new" ? null : modal} accounts={accounts} categories={categories} onClose={() => setModal(null)} />
+
+      {/* delete confirm */}
+      <Modal open={!!delSub} onClose={() => setDelSub(null)} title="Delete subscription?">
+        {delSub && (
+          <div className="space-y-4">
+            <p className="text-sm text-muted">
+              Delete <b className="text-ink">{delSub.name}</b>? This only removes the reminder — past payments are untouched.
+            </p>
+            <div className="flex justify-end gap-2">
+              <Btn variant="ghost" onClick={() => setDelSub(null)}>Cancel</Btn>
+              <Btn variant="danger" onClick={async () => { await deleteSubscription(delSub.id); setDelSub(null); }}>
+                Delete
+              </Btn>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
@@ -157,7 +187,8 @@ function SubModal({
     if (amt <= 0) return setError("Enter an amount greater than zero.");
     const payload = {
       name: name.trim(), amount: amt, cycle, nextDueDate: nextDue,
-      categoryId: categoryId || undefined, accountId: accountId || undefined, isActive: true,
+      categoryId: categoryId || undefined, accountId: accountId || undefined,
+      isActive: initial?.isActive ?? true,
     };
     if (initial) {
       await updateSubscription(initial.id, payload);
@@ -171,7 +202,7 @@ function SubModal({
     <Modal open={open} onClose={onClose} title={initial ? "Edit subscription" : "Add subscription"}>
       <div className="space-y-3">
         <Field label="Name"><Input placeholder="e.g. Netflix, Rent, Gym" value={name} onChange={(e) => setName(e.target.value)} /></Field>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Amount (₹)"><Input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>
           <Field label="Billing cycle">
             <Select value={cycle} onChange={(e) => setCycle(e.target.value as BillingCycle)}>
@@ -182,7 +213,7 @@ function SubModal({
         <Field label="Next due date" hint="We'll compute the following renewals from here.">
           <Input type="date" value={nextDue} onChange={(e) => setNextDue(e.target.value)} />
         </Field>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Category">
             <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
               <option value="">None</option>

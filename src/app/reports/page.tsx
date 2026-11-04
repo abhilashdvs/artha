@@ -2,15 +2,17 @@
 
 import { useMemo, useState } from "react";
 import { useAccounts, useCategories, usePaymentMethods, useTxns } from "@/lib/hooks";
-import { filterByRange, rangeForPreset, type DatePreset, type DateRange } from "@/lib/dates";
+import { filterByRange, monthKeyOf, rangeForPreset, type DatePreset, type DateRange } from "@/lib/dates";
 import { exportCategorySummaryCsv, exportMonthlySummaryCsv, exportTxnsCsv } from "@/lib/csv";
 import { formatINR } from "@/lib/money";
-import { categoryBreakdown, monthSeries } from "@/lib/analytics";
+import { categoryBreakdown, type MonthPoint } from "@/lib/analytics";
+import { expenseTotal, incomeTotal, investedTotal, savingsRateOf } from "@/lib/finance";
 import { Btn, Card, CardTitle } from "@/components/ui";
 import { DateFilter } from "@/components/DateFilter";
 import { downloadFile } from "@/lib/utils";
-import { startOfMonth, format } from "date-fns";
-import { Download, FileSpreadsheet } from "lucide-react";
+import { parseISO, startOfMonth, format } from "date-fns";
+import { Download } from "lucide-react";
+import type { Txn } from "@/lib/types";
 
 export default function ReportsPage() {
   const txns = useTxns();
@@ -23,7 +25,33 @@ export default function ReportsPage() {
   const range = useMemo(() => rangeForPreset(preset, custom), [preset, custom]);
   const ranged = useMemo(() => (txns ? filterByRange(txns, range) : []), [txns, range]);
 
-  const monthly = useMemo(() => (txns ? monthSeries(ranged.length ? ranged : txns, 12) : []), [txns, ranged]);
+  // Monthly buckets over the SELECTED range only — single source for the
+  // preview table and the CSV export. Months with no activity are omitted
+  // (no misleading ₹0 rows).
+  const monthly = useMemo<MonthPoint[]>(() => {
+    const byMonth = new Map<string, Txn[]>();
+    for (const t of ranged) {
+      const key = monthKeyOf(t.date);
+      const arr = byMonth.get(key);
+      if (arr) arr.push(t);
+      else byMonth.set(key, [t]);
+    }
+    return [...byMonth.entries()]
+      .sort(([a], [b]) => (a < b ? -1 : 1))
+      .map(([key, txns]) => {
+        const income = incomeTotal(txns);
+        const expense = expenseTotal(txns);
+        return {
+          month: key,
+          label: format(parseISO(`${key}-01`), "MMM yy"),
+          income,
+          expense,
+          invested: investedTotal(txns),
+          savings: income - expense,
+          savingsRate: savingsRateOf(txns),
+        };
+      });
+  }, [ranged]);
   const catBreakdown = useMemo(
     () => (categories ? categoryBreakdown(ranged, categories) : []),
     [ranged, categories]
@@ -79,9 +107,9 @@ export default function ReportsPage() {
 
       {/* preview table: monthly */}
       <Card>
-        <CardTitle title="Monthly Summary Preview" sub="Last 12 months" />
+        <CardTitle title="Monthly Summary Preview" sub="Months in selected period" />
         {monthly.length === 0 ? (
-          <p className="py-10 text-center text-xs text-muted">No data yet</p>
+          <p className="py-10 text-center text-xs text-muted">No data in selected range</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">

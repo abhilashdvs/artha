@@ -4,7 +4,7 @@ import { useState } from "react";
 import type { DatePreset, DateRange } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 import { Input } from "./ui";
-import { format } from "date-fns";
+import { format, parseISO } from "date-fns";
 
 const PRESETS: { key: DatePreset; label: string }[] = [
   { key: "today", label: "Today" },
@@ -33,7 +33,7 @@ export function DateFilter({
           key={p.key}
           onClick={() => { setShowCustom(false); onChange(p.key); }}
           className={cn(
-            "rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
+            "rounded-full px-3 py-2 text-xs font-medium transition-colors",
             preset === p.key && !showCustom
               ? "bg-accent text-white"
               : "border border-border text-muted hover:bg-cardhover"
@@ -45,26 +45,26 @@ export function DateFilter({
       <button
         onClick={() => { setShowCustom(true); onChange("custom"); }}
         className={cn(
-          "rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
+          "rounded-full px-3 py-2 text-xs font-medium transition-colors",
           preset === "custom" ? "bg-accent text-white" : "border border-border text-muted hover:bg-cardhover"
         )}
       >
         Custom
       </button>
       {preset === "custom" && (
-        <div className="flex items-center gap-1.5">
+        <div className="flex w-full flex-wrap items-center gap-1.5 sm:w-auto">
           <Input
             type="date"
-            className="w-auto px-2 py-1 text-xs"
+            className="min-w-0 flex-1 px-2 py-1 text-xs sm:w-auto sm:flex-none"
             value={format(custom.start, "yyyy-MM-dd")}
-            onChange={(e) => e.target.value && onCustomChange({ ...custom, start: new Date(e.target.value) })}
+            onChange={(e) => e.target.value && onCustomChange({ ...custom, start: parseISO(e.target.value) })}
           />
           <span className="text-xs text-faint">→</span>
           <Input
             type="date"
-            className="w-auto px-2 py-1 text-xs"
+            className="min-w-0 flex-1 px-2 py-1 text-xs sm:w-auto sm:flex-none"
             value={format(custom.end, "yyyy-MM-dd")}
-            onChange={(e) => e.target.value && onCustomChange({ ...custom, end: new Date(e.target.value) })}
+            onChange={(e) => e.target.value && onCustomChange({ ...custom, end: parseISO(e.target.value) })}
           />
         </div>
       )}

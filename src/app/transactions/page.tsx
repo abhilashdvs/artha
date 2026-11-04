@@ -8,13 +8,13 @@ import {
 import { filterByRange, fmtDay, monthKeyOf, rangeForPreset, type DatePreset, type DateRange } from "@/lib/dates";
 import { formatINR } from "@/lib/money";
 import { addTxn, deleteTxn, updateTxn } from "@/lib/db";
-import { exportTxnsCsv, parseCsvFile, previewImport, runImport, type ImportPlan } from "@/lib/csv";
+import { exportTxnsCsv, parseCsvFile, previewImport, runImport, type ImportItem, type ImportPlan, type SkippedRow } from "@/lib/csv";
 import { Card, CardTitle, Btn, Empty, Input, Modal, Select, Badge } from "@/components/ui";
 import { DateFilter } from "@/components/DateFilter";
 import { TxnForm } from "@/components/TxnForm";
 import { cn, downloadFile } from "@/lib/utils";
 import { ArrowDownUp, Download, Pencil, Search, Trash2, Upload } from "lucide-react";
-import { startOfMonth, format } from "date-fns";
+import { startOfMonth, format, parseISO } from "date-fns";
 import type { Txn, TxnType } from "@/lib/types";
 
 const TYPE_LABEL: Record<TxnType, string> = {
@@ -67,7 +67,7 @@ function TransactionsInner() {
   const grouped = useMemo(() => {
     const map = new Map<string, Txn[]>();
     for (const t of filtered) {
-      const key = t.date.slice(0, 10);
+      const key = format(parseISO(t.date), "yyyy-MM-dd"); // local day, not UTC slice
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(t);
     }
@@ -203,11 +203,11 @@ function TransactionsInner() {
                         <span className={cn("tnum text-sm font-semibold", isOut ? "text-danger" : isIn ? "text-good" : "text-ink")}>
                           {isOut ? "−" : isIn ? "+" : ""}{formatINR(t.amount)}
                         </span>
-                        <div className="hidden gap-1 group-hover:flex">
-                          <button onClick={() => setEditTxn(t)} className="rounded-lg p-1.5 text-muted hover:bg-bg hover:text-ink">
+                        <div className="flex gap-1">
+                          <button onClick={() => setEditTxn(t)} title="Edit transaction" aria-label="Edit transaction" className="rounded-lg p-2 text-muted hover:bg-bg hover:text-ink">
                             <Pencil size={13} />
                           </button>
-                          <button onClick={() => setDelTxn(t)} className="rounded-lg p-1.5 text-muted hover:bg-danger/10 hover:text-danger">
+                          <button onClick={() => setDelTxn(t)} title="Delete transaction" aria-label="Delete transaction" className="rounded-lg p-2 text-muted hover:bg-danger/10 hover:text-danger">
                             <Trash2 size={13} />
                           </button>
                         </div>
@@ -272,23 +272,44 @@ function ImportModal({ open, onClose }: { open: boolean; onClose: () => void }) 
   const [accountId, setAccountId] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<{ inserted: number; dupes: number; total: number } | null>(null);
+  const [pending, setPending] = useState<{ items: ImportItem[]; skipped: SkippedRow[]; plan: ImportPlan; total: number } | null>(null);
+  const [result, setResult] = useState<{ inserted: number; dupes: number; skipped: number; total: number } | null>(null);
 
   async function handleFile(file: File) {
     if (!accountId) return setError("Choose the account these transactions belong to first.");
     setBusy(true);
     setError(null);
+    setResult(null);
     try {
       const rows = await parseCsvFile(file);
       if (rows.length === 0) return setError("Could not find any valid rows. Check the column format.");
       const plan: ImportPlan = {
         accountId,
-        kind: file.name.endsWith(".csv") ? "generic" : "generic",
+        kind: "generic",
         dateCol: "auto", descCol: "auto", amountCol: "auto", typeCol: "auto", categoryCol: "auto",
       };
-      const items = previewImport(rows, plan, categories ?? []);
-      const res = await runImport(items, plan, txns ?? [], categories ?? []);
-      setResult({ ...res, total: rows.length });
+      const { items, skipped } = previewImport(rows, plan, categories ?? []);
+      if (items.length === 0) {
+        return setError(
+          `No importable rows found${skipped.length > 0 ? ` — all ${skipped.length} rows were skipped (e.g. ${skipped[0].reason.toLowerCase()})` : ""}. Check the column format.`,
+        );
+      }
+      setPending({ items, skipped, plan, total: rows.length });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Import failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function confirmImport() {
+    if (!pending) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await runImport(pending.items, pending.plan, txns ?? [], categories ?? []);
+      setResult({ ...res, skipped: pending.skipped.length, total: pending.total });
+      setPending(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Import failed");
     } finally {
@@ -319,9 +340,38 @@ function ImportModal({ open, onClose }: { open: boolean; onClose: () => void }) 
         />
         {busy && <p className="text-xs text-muted">Importing…</p>}
         {error && <p className="rounded-xl bg-danger/10 px-3 py-2 text-xs font-medium text-danger">{error}</p>}
+        {pending && (
+          <div className="space-y-3 rounded-xl border border-accent/40 bg-accent/5 p-3">
+            <p className="text-xs font-medium text-ink">
+              Ready to import <b>{pending.items.length}</b> of {pending.total} rows.
+              {pending.skipped.length > 0 && (
+                <span className="text-warn"> {pending.skipped.length} row{pending.skipped.length === 1 ? "" : "s"} will be skipped:</span>
+              )}
+            </p>
+            {pending.skipped.length > 0 && (
+              <ul className="max-h-32 space-y-1 overflow-y-auto rounded-lg bg-bg p-2 text-[11px] text-muted">
+                {pending.skipped.slice(0, 20).map((s) => (
+                  <li key={s.row} className="flex gap-2">
+                    <span className="tnum shrink-0 text-faint">#{s.row}</span>
+                    <span className="min-w-0 flex-1 truncate" title={s.description}>{s.description}</span>
+                    <span className="shrink-0 text-warn">{s.reason}</span>
+                  </li>
+                ))}
+                {pending.skipped.length > 20 && (
+                  <li className="text-faint">…and {pending.skipped.length - 20} more</li>
+                )}
+              </ul>
+            )}
+            <div className="flex justify-end gap-2">
+              <Btn size="sm" variant="ghost" onClick={() => setPending(null)}>Cancel</Btn>
+              <Btn size="sm" onClick={confirmImport} disabled={busy}>Import {pending.items.length} rows</Btn>
+            </div>
+          </div>
+        )}
         {result && (
           <div className="rounded-xl bg-good/10 px-3 py-2.5 text-xs text-good">
-            <b>{result.inserted}</b> of {result.total} rows imported · {result.dupes} duplicates skipped.
+            <b>{result.inserted}</b> of {result.total} rows imported · {result.dupes} duplicates skipped
+            {result.skipped > 0 ? ` · ${result.skipped} invalid rows skipped` : ""}.
             <div className="mt-2">
               <Btn size="sm" variant="outline" onClick={() => { setResult(null); onClose(); }}>Done</Btn>
             </div>

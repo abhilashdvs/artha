@@ -5,7 +5,7 @@ import { useBudgets, useCategories, useTxns } from "@/lib/hooks";
 import { addBudget, deleteBudget, updateBudget } from "@/lib/db";
 import { budgetProgress } from "@/lib/finance";
 import { formatINR, pct, toPaise } from "@/lib/money";
-import { daysLeftInMonth, monthRange } from "@/lib/dates";
+import { daysLeftInMonth } from "@/lib/dates";
 import { Badge, Btn, Card, Empty, Field, Input, Modal, Progress, Select } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import type { Budget, Category } from "@/lib/types";
@@ -16,10 +16,11 @@ export default function BudgetsPage() {
   const categories = useCategories();
   const txns = useTxns();
   const [modal, setModal] = useState<Budget | "new" | null>(null);
+  const [delBudget, setDelBudget] = useState<Budget | null>(null);
 
   const progress = useMemo(
-    () => (budgets && txns ? budgetProgress(budgets, txns) : []),
-    [budgets, txns]
+    () => (budgets && txns ? budgetProgress(budgets, txns, undefined, categories) : []),
+    [budgets, txns, categories]
   );
 
   if (!budgets || !categories || !txns) {
@@ -48,15 +49,15 @@ export default function BudgetsPage() {
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div className="rounded-2xl border border-border bg-card p-4">
           <p className="text-xs text-muted">Total budgeted</p>
-          <p className="tnum mt-1 text-lg font-bold">{formatINR(totalBudget)}</p>
+          <p className="tnum mt-1 truncate text-lg font-bold" title={formatINR(totalBudget)}>{formatINR(totalBudget)}</p>
         </div>
         <div className="rounded-2xl border border-border bg-card p-4">
           <p className="text-xs text-muted">Spent this month</p>
-          <p className="tnum mt-1 text-lg font-bold text-danger">{formatINR(totalSpent)}</p>
+          <p className="tnum mt-1 truncate text-lg font-bold text-danger" title={formatINR(totalSpent)}>{formatINR(totalSpent)}</p>
         </div>
         <div className="rounded-2xl border border-border bg-card p-4">
           <p className="text-xs text-muted">Remaining</p>
-          <p className={cn("tnum mt-1 text-lg font-bold", totalBudget - totalSpent >= 0 ? "text-good" : "text-danger")}>
+          <p className={cn("tnum mt-1 truncate text-lg font-bold", totalBudget - totalSpent >= 0 ? "text-good" : "text-danger")} title={formatINR(totalBudget - totalSpent)}>
             {formatINR(totalBudget - totalSpent)}
           </p>
         </div>
@@ -80,9 +81,9 @@ export default function BudgetsPage() {
             const dailyLeft = dLeft > 0 ? p.remaining / dLeft : 0;
             return (
               <Card key={p.budget.id}>
-                <div className="flex items-start justify-between">
-                  <div>
-                    <p className="text-sm font-semibold text-ink">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-ink" title={p.budget.categoryId ? categories.find((c) => c.id === p.budget.categoryId)?.name ?? "?" : "Overall spending"}>
                       {p.budget.categoryId ? categories.find((c) => c.id === p.budget.categoryId)?.name ?? "?" : "Overall spending"}
                     </p>
                     <p className="text-[11px] text-muted">
@@ -90,9 +91,9 @@ export default function BudgetsPage() {
                       {p.budget.isDemo && <Badge tone="warn">demo</Badge>}
                     </p>
                   </div>
-                  <div className="flex gap-1">
-                    <button onClick={() => setModal(p.budget)} className="rounded-lg p-1.5 text-muted hover:bg-cardhover hover:text-ink"><Pencil size={13} /></button>
-                    <button onClick={() => deleteBudget(p.budget.id)} className="rounded-lg p-1.5 text-muted hover:bg-danger/10 hover:text-danger"><Trash2 size={13} /></button>
+                  <div className="flex shrink-0 gap-1">
+                    <button onClick={() => setModal(p.budget)} title="Edit budget" aria-label="Edit budget" className="rounded-lg p-2 text-muted hover:bg-cardhover hover:text-ink"><Pencil size={13} /></button>
+                    <button onClick={() => setDelBudget(p.budget)} title="Delete budget" aria-label="Delete budget" className="rounded-lg p-2 text-muted hover:bg-danger/10 hover:text-danger"><Trash2 size={13} /></button>
                   </div>
                 </div>
                 <div className="mt-3 flex items-baseline justify-between">
@@ -116,6 +117,23 @@ export default function BudgetsPage() {
       )}
 
       <BudgetModal open={modal !== null} initial={modal === "new" ? null : modal} categories={expenseCats} onClose={() => setModal(null)} />
+
+      {/* delete confirm */}
+      <Modal open={!!delBudget} onClose={() => setDelBudget(null)} title="Delete budget?">
+        {delBudget && (
+          <div className="space-y-4">
+            <p className="text-sm text-muted">
+              Delete the budget for <b className="text-ink">{delBudget.categoryId ? expenseCats.find((c) => c.id === delBudget.categoryId)?.name ?? "this category" : "overall spending"}</b>? Transactions are unaffected.
+            </p>
+            <div className="flex justify-end gap-2">
+              <Btn variant="ghost" onClick={() => setDelBudget(null)}>Cancel</Btn>
+              <Btn variant="danger" onClick={async () => { await deleteBudget(delBudget.id); setDelBudget(null); }}>
+                Delete
+              </Btn>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

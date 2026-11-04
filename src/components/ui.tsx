@@ -43,8 +43,8 @@ export function Stat({
         <p className="text-xs font-medium text-muted">{label}</p>
         {icon && <span className="text-faint">{icon}</span>}
       </div>
-      <p className={cn("mt-1.5 text-xl font-bold tracking-tight tabular-nums", valueTone)}>{value}</p>
-      {sub && <p className="mt-0.5 text-xs text-muted">{sub}</p>}
+      <p className={cn("mt-1.5 truncate text-xl font-bold tracking-tight tabular-nums", valueTone)} title={value}>{value}</p>
+      {sub && <p className="mt-0.5 line-clamp-2 text-xs text-muted" title={sub}>{sub}</p>}
     </div>
   );
 }
@@ -61,7 +61,7 @@ export function Btn({
     <button
       className={cn(
         "inline-flex items-center justify-center gap-1.5 rounded-xl font-medium transition-colors disabled:opacity-50",
-        size === "sm" ? "px-2.5 py-1.5 text-xs" : "px-4 py-2 text-sm",
+        size === "sm" ? "px-3 py-2 text-xs" : "px-4 py-2 text-sm",
         variant === "primary" && "bg-accent text-white hover:bg-accentstrong",
         variant === "ghost" && "text-ink hover:bg-cardhover",
         variant === "outline" && "border border-border text-ink hover:bg-cardhover",
@@ -136,7 +136,13 @@ export function Modal({
     if (!open) return;
     const h = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", h);
-    return () => window.removeEventListener("keydown", h);
+    // lock body scroll while the modal is open
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", h);
+      document.body.style.overflow = prevOverflow;
+    };
   }, [open, onClose]);
 
   if (!open) return null;
@@ -144,14 +150,17 @@ export function Modal({
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
         className={cn(
-          "relative max-h-[92vh] w-full overflow-y-auto rounded-t-2xl border border-border bg-card p-5 shadow-2xl sm:rounded-2xl",
+          "relative max-h-[92vh] w-full overflow-y-auto rounded-t-2xl border border-border bg-card p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-2xl sm:rounded-2xl sm:pb-5",
           wide ? "sm:max-w-2xl" : "sm:max-w-md"
         )}
       >
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-base font-semibold text-ink">{title}</h2>
-          <button onClick={onClose} className="rounded-lg p-1 text-muted hover:bg-cardhover">
+          <button onClick={onClose} aria-label="Close" className="rounded-lg p-2 text-muted hover:bg-cardhover">
             <X size={18} />
           </button>
         </div>

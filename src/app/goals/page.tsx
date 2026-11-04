@@ -19,6 +19,7 @@ export default function GoalsPage() {
   const paymentMethods = usePaymentMethods();
   const [modal, setModal] = useState<Goal | "new" | null>(null);
   const [contributeFor, setContributeFor] = useState<Goal | null>(null);
+  const [delGoal, setDelGoal] = useState<Goal | null>(null);
 
   if (!goals || !accounts || !categories || !paymentMethods) {
     return <div className="py-20 text-center text-sm text-muted">Loading…</div>;
@@ -52,25 +53,25 @@ export default function GoalsPage() {
               monthsLeft !== null && monthsLeft > 0 ? Math.ceil((g.targetAmount - g.currentAmount) / monthsLeft) : null;
             return (
               <Card key={g.id}>
-                <div className="flex items-start justify-between">
-                  <div>
-                    <p className="text-sm font-semibold text-ink">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-ink" title={g.name}>
                       {g.name} {g.isDemo && <Badge tone="warn">demo</Badge>}
                     </p>
-                    <p className="text-[11px] text-muted">
+                    <p className="truncate text-[11px] text-muted" title={`${g.targetDate ? `target ${fmtDay(g.targetDate)}` : "no deadline"}${g.notes ? ` · ${g.notes}` : ""}`}>
                       {g.targetDate ? `target ${fmtDay(g.targetDate)}` : "no deadline"}
                       {g.notes ? ` · ${g.notes}` : ""}
                     </p>
                   </div>
-                  <div className="flex gap-1">
-                    <button onClick={() => setModal(g)} className="rounded-lg p-1.5 text-muted hover:bg-cardhover hover:text-ink"><Pencil size={13} /></button>
-                    <button onClick={() => deleteGoal(g.id)} className="rounded-lg p-1.5 text-muted hover:bg-danger/10 hover:text-danger"><Trash2 size={13} /></button>
+                  <div className="flex shrink-0 gap-1">
+                    <button onClick={() => setModal(g)} title="Edit goal" aria-label="Edit goal" className="rounded-lg p-2 text-muted hover:bg-cardhover hover:text-ink"><Pencil size={13} /></button>
+                    <button onClick={() => setDelGoal(g)} title="Delete goal" aria-label="Delete goal" className="rounded-lg p-2 text-muted hover:bg-danger/10 hover:text-danger"><Trash2 size={13} /></button>
                   </div>
                 </div>
-                <p className="tnum mt-3 text-lg font-bold">
+                <p className="tnum mt-3 truncate text-lg font-bold" title={`${formatINR(g.currentAmount)} / ${formatINR(g.targetAmount)}`}>
                   {formatINR(g.currentAmount)} <span className="text-sm font-normal text-muted">/ {formatINR(g.targetAmount)}</span>
                 </p>
-                <div className="mt-2"><Progress value={p} color="#8b5cf6" /></div>
+                <div className="mt-2"><Progress value={p} color="var(--violet)" /></div>
                 <div className="mt-2 flex items-center justify-between text-[11px] text-muted">
                   <span className={cn("font-semibold", p >= 100 ? "text-good" : "text-accent")}>{p.toFixed(0)}%</span>
                   {monthlyNeeded !== null && p < 100 && <span>needs ≈ {formatINR(monthlyNeeded)}/mo</span>}
@@ -104,6 +105,23 @@ export default function GoalsPage() {
       )}
 
       <GoalModal open={modal !== null} initial={modal === "new" ? null : modal} onClose={() => setModal(null)} />
+
+      {/* delete confirm */}
+      <Modal open={!!delGoal} onClose={() => setDelGoal(null)} title="Delete goal?">
+        {delGoal && (
+          <div className="space-y-4">
+            <p className="text-sm text-muted">
+              Delete <b className="text-ink">{delGoal.name}</b>? Linked contribution transactions are kept but no longer count toward a goal.
+            </p>
+            <div className="flex justify-end gap-2">
+              <Btn variant="ghost" onClick={() => setDelGoal(null)}>Cancel</Btn>
+              <Btn variant="danger" onClick={async () => { await deleteGoal(delGoal.id); setDelGoal(null); }}>
+                Delete
+              </Btn>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       <Modal open={!!contributeFor} onClose={() => setContributeFor(null)} title={`Contribute to ${contributeFor?.name}`} wide>
         {contributeFor && (
@@ -160,7 +178,7 @@ function GoalModal({ open, initial, onClose }: { open: boolean; initial: Goal | 
     <Modal open={open} onClose={onClose} title={initial ? "Edit goal" : "New goal"}>
       <div className="space-y-3">
         <Field label="Goal name"><Input placeholder="e.g. Japan trip, Emergency fund" value={name} onChange={(e) => setName(e.target.value)} /></Field>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Target amount (₹)"><Input inputMode="decimal" value={target} onChange={(e) => setTarget(e.target.value)} /></Field>
           <Field label="Target date (optional)"><Input type="date" value={targetDate} onChange={(e) => setTargetDate(e.target.value)} /></Field>
         </div>

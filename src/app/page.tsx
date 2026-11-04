@@ -6,20 +6,20 @@ import {
   useLoans, usePaymentMethods, useSubscriptions, useTxns,
 } from "@/lib/hooks";
 import {
-  ccOutstanding, computeBalances, expenseTotal, incomeTotal, investedTotal, netWorth,
+  ccOutstanding, computeBalances, expenseTotal, incomeTotal, investedTotal, loanSummaries, netWorth,
 } from "@/lib/finance";
 import { filterByRange, fmtDay, monthKeyOf, rangeForPreset, type DatePreset, type DateRange } from "@/lib/dates";
-import { format, startOfMonth, subMonths } from "date-fns";
+import { addMonths, format, startOfMonth, startOfToday, subMonths } from "date-fns";
 import { formatINR, pct } from "@/lib/money";
 import { accountBalanceList, categoryBreakdown, monthSeries, needsWantsSplit, paymentMethodSplit } from "@/lib/analytics";
-import { healthScoreForMonth } from "@/lib/healthScore";
+import { activeWeights, healthScoreForMonth } from "@/lib/healthScore";
 import { Card, CardTitle, Empty, Stat } from "@/components/ui";
 import { DateFilter } from "@/components/DateFilter";
 import { DonutChart, HBarChart, IncomeExpenseChart, SavingsRateChart, TrendChart } from "@/components/charts";
 import { DemoEmpty } from "@/components/DemoEmpty";
 import { ArrowDownRight, ArrowUpRight, CalendarClock, TrendingUp, Wallet } from "lucide-react";
 import Link from "next/link";
-import { differenceInDays, parseISO } from "date-fns";
+import { differenceInCalendarDays, parseISO } from "date-fns";
 
 export default function DashboardPage() {
   const accounts = useAccounts();
@@ -62,21 +62,24 @@ export default function DashboardPage() {
     const savings = income - expense;
     const savingsPct = pct(Math.max(0, savings), income);
 
-    // previous-period comparison (same length, immediately before)
-    const span = range.end.getTime() - range.start.getTime();
-    const prevRange = { start: new Date(range.start.getTime() - span), end: new Date(range.start.getTime() - 1) };
+    // previous-period comparison: same day-of-month window in the previous month
+    // (a fixed ms-length span under-counts when the previous month is longer)
+    const prevRange = { start: startOfMonth(addMonths(range.end, -1)), end: addMonths(range.end, -1) };
     const prevTxns = filterByRange(txns, prevRange);
     const prevExpense = expenseTotal(prevTxns);
 
     const nw = netWorth(active, balances, loans, txns);
+    const lentPaid = loanSummaries(loans, txns)
+      .filter((s) => s.loan.direction === "lent")
+      .reduce((a, s) => a + s.paid, 0);
     const upcoming = subscriptions
       .filter((s) => s.isActive)
-      .map((s) => ({ ...s, daysLeft: differenceInDays(parseISO(s.nextDueDate), new Date()) }))
+      .map((s) => ({ ...s, daysLeft: differenceInCalendarDays(parseISO(s.nextDueDate), startOfToday()) }))
       .filter((s) => s.daysLeft <= 10)
       .sort((a, b) => a.daysLeft - b.daysLeft)
       .slice(0, 6);
 
-    const recent = [...txns].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 8);
+    const recent = [...txns].sort((a, b) => +parseISO(b.date) - +parseISO(a.date)).slice(0, 8);
 
     const thisMonthKey = format(new Date(), "yyyy-MM");
     const hs = healthScoreForMonth(thisMonthKey, {
@@ -85,7 +88,8 @@ export default function DashboardPage() {
 
     return {
       bankCash, cashBal, ccOut, income, expense, invested, savings, savingsPct,
-      prevExpense, nw, upcoming, recent, hs,
+      prevExpense, nw, lentPaid, upcoming, recent, hs,
+      weights: activeWeights(),
       series6: monthSeries(txns, 6),
       catSlices: categoryBreakdown(rangedTxns, categories),
       acctDist: accountBalanceList(accounts, balances),
@@ -137,8 +141,8 @@ export default function DashboardPage() {
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat label="Net Worth" value={formatINR(d.nw.total)} tone={d.nw.total >= 0 ? "good" : "bad"}
           sub={`Assets ${formatINR(d.nw.bankAndCash + d.nw.investments + d.nw.lentOutstanding)} − Liabilities ${formatINR(d.nw.ccOutstanding + d.nw.borrowedOutstanding)}`} />
-        <Stat label="Invested / Saved" value={formatINR(d.nw.investments + investedTotal(txns))} sub="investment accounts + tracked investments" />
-        <Stat label="Money Lent (pending)" value={formatINR(d.nw.lentOutstanding)} sub={`recovered ${formatINR(d.nw.lentOutstanding > 0 ? loans.filter(l=>l.direction==="lent").reduce((s,l)=>s+l.amount,0) - d.nw.lentOutstanding : 0)}`} />
+        <Stat label="Invested / Saved" value={formatINR(d.nw.investments)} sub="investment accounts (incl. tracked SIP credits)" />
+        <Stat label="Money Lent (pending)" value={formatINR(d.nw.lentOutstanding)} sub={`recovered ${formatINR(d.lentPaid)} so far`} />
         <Stat label="You Owe" value={formatINR(d.nw.borrowedOutstanding + d.nw.ccOutstanding)} tone={d.nw.borrowedOutstanding + d.nw.ccOutstanding > 0 ? "warn" : "good"} sub="borrowed + credit cards" />
       </div>
 
@@ -164,7 +168,7 @@ export default function DashboardPage() {
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Card>
           <CardTitle title="Spending Trend" sub="Last 6 months" />
-          <TrendChart data={d.series6} dataKey="expense" color="#f43f5e" />
+          <TrendChart data={d.series6} dataKey="expense" color="var(--danger)" />
         </Card>
         <Card>
           <CardTitle title="Savings Rate" sub="Last 6 months" />
@@ -175,9 +179,9 @@ export default function DashboardPage() {
           {d.nwSplit.need + d.nwSplit.want > 0 ? (
             <DonutChart
               data={[
-                { name: "Needs", value: d.nwSplit.need, color: "#10b981" },
-                { name: "Wants", value: d.nwSplit.want, color: "#f59e0b" },
-                ...(d.nwSplit.other > 0 ? [{ name: "Other", value: d.nwSplit.other, color: "#64748b" }] : []),
+                { name: "Needs", value: d.nwSplit.need, color: "var(--good)" },
+                { name: "Wants", value: d.nwSplit.want, color: "var(--warn)" },
+                ...(d.nwSplit.other > 0 ? [{ name: "Other", value: d.nwSplit.other, color: "var(--faint)" }] : []),
               ]}
             />
           ) : (
@@ -216,10 +220,10 @@ export default function DashboardPage() {
               <span className="absolute text-2xl font-bold">{d.hs.total}</span>
             </div>
             <div className="space-y-1 text-xs text-muted">
-              <p>Savings rate: <b className="text-ink">{d.hs.savings}/40</b></p>
-              <p>Budget discipline: <b className="text-ink">{d.hs.budget}/25</b></p>
-              <p>Debt load: <b className="text-ink">{d.hs.debt}/20</b></p>
-              <p>Lending hygiene: <b className="text-ink">{d.hs.lending}/15</b></p>
+              <p>Savings rate: <b className="text-ink">{d.hs.savings}/{d.weights.savings}</b></p>
+              <p>Budget discipline: <b className="text-ink">{d.hs.budget}/{d.weights.budget}</b></p>
+              <p>Debt load: <b className="text-ink">{d.hs.debt}/{d.weights.debt}</b></p>
+              <p>Lending hygiene: <b className="text-ink">{d.hs.lending}/{d.weights.lending}</b></p>
             </div>
           </div>
         </Card>
@@ -233,15 +237,15 @@ export default function DashboardPage() {
           ) : (
             <ul className="space-y-2.5">
               {d.upcoming.map((s) => (
-                <li key={s.id} className="flex items-center justify-between text-sm">
-                  <span className="flex items-center gap-2 text-ink">
-                    <CalendarClock size={14} className={s.daysLeft <= 2 ? "text-danger" : "text-muted"} />
-                    {s.name}
+                <li key={s.id} className="flex items-center justify-between gap-3 text-sm">
+                  <span className="flex min-w-0 items-center gap-2 text-ink">
+                    <CalendarClock size={14} className={`shrink-0 ${s.daysLeft <= 2 ? "text-danger" : "text-muted"}`} />
+                    <span className="truncate" title={s.name}>{s.name}</span>
                   </span>
-                  <span className="text-right">
+                  <span className="shrink-0 text-right">
                     <span className="tnum font-semibold">{formatINR(s.amount)}</span>
                     <span className="block text-[11px] text-muted">
-                      {s.daysLeft <= 0 ? "due today" : `in ${s.daysLeft}d`}
+                      {s.daysLeft < 0 ? `overdue ${-s.daysLeft}d` : s.daysLeft === 0 ? "due today" : `in ${s.daysLeft}d`}
                     </span>
                   </span>
                 </li>
@@ -276,13 +280,13 @@ export default function DashboardPage() {
               return (
                 <li key={t.id} className="flex items-center justify-between py-2.5 text-sm">
                   <div className="min-w-0">
-                    <p className="truncate font-medium text-ink">{t.description}</p>
-                    <p className="text-xs text-muted">
+                    <p className="truncate font-medium text-ink" title={t.description}>{t.description}</p>
+                    <p className="truncate text-xs text-muted" title={`${fmtDay(t.date)} · ${acctName}${catName ? ` · ${catName}` : ""}`}>
                       {fmtDay(t.date)} · {acctName}{catName ? ` · ${catName}` : ""}
                       {t.type !== "expense" && t.type !== "income" ? ` · ${t.type.replace("_", " ")}` : ""}
                     </p>
                   </div>
-                  <span className={`tnum ml-3 font-semibold ${isOut ? "text-danger" : t.type === "income" ? "text-good" : "text-ink"}`}>
+                  <span className={`tnum ml-3 shrink-0 font-semibold ${isOut ? "text-danger" : t.type === "income" ? "text-good" : "text-ink"}`}>
                     {isOut ? "−" : t.type === "income" ? "+" : ""}{formatINR(t.amount)}
                   </span>
                 </li>

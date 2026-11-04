@@ -4,8 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
-  BarChart3, CalendarClock, CreditCard, FolderTree, HandCoins, Home,
-  ListOrdered, Menu, Moon, PiggyBank, ReceiptText, Sun, Target, Wallet, Zap,
+  BarChart3, CalendarClock, FolderTree, FileSpreadsheet, HandCoins, Home,
+  ListOrdered, Menu, Moon, PiggyBank, ReceiptText, Settings, Sun, Target, Wallet, Zap,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
@@ -23,8 +23,8 @@ const NAV = [
   { href: "/income", label: "Income", icon: ReceiptText },
   { href: "/subscriptions", label: "Subscriptions & Bills", icon: CalendarClock },
   { href: "/goals", label: "Savings Goals", icon: Target },
-  { href: "/reports", label: "Reports", icon: ReceiptText },
-  { href: "/settings", label: "Settings", icon: CreditCard },
+  { href: "/reports", label: "Reports", icon: FileSpreadsheet },
+  { href: "/settings", label: "Settings", icon: Settings },
 ];
 
 function ThemeToggle() {
@@ -71,7 +71,7 @@ export function Sidebar() {
               key={item.href}
               href={item.href}
               className={cn(
-                "flex items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] font-medium transition-colors",
+                "flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-[13px] font-medium transition-colors",
                 active ? "bg-accent/10 text-accent" : "text-muted hover:bg-cardhover hover:text-ink"
               )}
             >
@@ -106,7 +106,7 @@ export function MobileNav() {
             className={cn("flex flex-col items-center gap-0.5 px-2 py-0.5", isActive(item.href) ? "text-accent" : "text-muted")}
           >
             <item.icon size={18} />
-            <span className="text-[9px] font-medium">{item.label.split(" ")[0]}</span>
+            <span className="text-[10px] font-medium">{item.label.split(" ")[0]}</span>
           </Link>
         ))}
         <button
@@ -115,7 +115,7 @@ export function MobileNav() {
           aria-label="More pages"
         >
           <Menu size={18} />
-          <span className="text-[9px] font-medium">More</span>
+          <span className="text-[10px] font-medium">More</span>
         </button>
       </nav>
       <Modal open={moreOpen} onClose={() => setMoreOpen(false)} title="More">

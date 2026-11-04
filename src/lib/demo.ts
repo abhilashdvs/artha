@@ -9,6 +9,8 @@ import { ACCOUNT_COLORS, mulberry32, uid } from "./utils";
 // ─────────────────────────────────────────────────────────────
 
 export async function seedDemo(): Promise<void> {
+  // Idempotent: never stack a second copy of demo data.
+  if ((await db.accounts.filter((a) => a.isDemo === true).count()) > 0) return;
   await seedDefaults();
   const rand = mulberry32(42);
   const pick = <T,>(arr: T[]): T => arr[Math.floor(rand() * arr.length)];
@@ -267,5 +269,5 @@ export async function wipeAllData(): Promise<void> {
   } catch {
     /* ignore */
   }
-  await seedDefaults();
+  await seedDefaults(true); // bypass the once-per-session guard so defaults come back after a wipe
 }

@@ -22,12 +22,14 @@ export default function AccountsPage() {
   const balances = useBalances(accounts, txns);
   const [acctModal, setAcctModal] = useState<Account | "new" | null>(null);
   const [pmModal, setPmModal] = useState<PaymentMethod | "new" | null>(null);
+  const [archiveAcct, setArchiveAcct] = useState<Account | null>(null);
+  const [removePm, setRemovePm] = useState<PaymentMethod | null>(null);
 
   const derived = useMemo(() => {
     if (!accounts || !balances) return null;
     const active = accounts.filter((a) => a.isActive);
     const balOf = (a: Account) => balances.get(a.id) ?? a.openingBalance;
-    const bankCash = active.filter((a) => a.type !== "credit_card").reduce((s, a) => s + balOf(a), 0);
+    const bankCash = active.filter((a) => a.type === "bank" || a.type === "cash" || a.type === "wallet").reduce((s, a) => s + balOf(a), 0);
     const ccOut = active.filter((a) => a.type === "credit_card").reduce((s, a) => s + ccOutstanding(balOf(a)), 0);
     const cashTotal = active.filter((a) => a.type === "cash").reduce((s, a) => s + balOf(a), 0);
     return { bankCash, ccOut, cashTotal };
@@ -42,7 +44,7 @@ export default function AccountsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Accounts & Cards</h1>
           <p className="text-sm text-muted">Where your money actually lives</p>
@@ -50,7 +52,7 @@ export default function AccountsPage() {
         <Btn size="sm" onClick={() => setAcctModal("new")}><Plus size={14} /> Add account</Btn>
       </div>
 
-      <div className="grid grid-cols-3 gap-2 sm:gap-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         <div className="rounded-2xl border border-border bg-card p-3 sm:p-4">
           <p className="text-[11px] text-muted sm:text-xs">Bank + Cash + Wallets</p>
           <p className={cn("tnum mt-1 truncate text-base font-bold sm:text-lg", derived.bankCash >= 0 ? "text-ink" : "text-danger")} title={formatINR(derived.bankCash)}>{formatINR(derived.bankCash)}</p>
@@ -85,8 +87,8 @@ export default function AccountsPage() {
                   <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent/10 text-accent">
                     <Icon size={16} />
                   </span>
-                  <div>
-                    <p className="text-sm font-semibold text-ink">{a.name}</p>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-ink" title={a.name}>{a.name}</p>
                     <p className="text-[11px] text-muted">{ACCOUNT_TYPE_LABEL[a.type]}</p>
                   </div>
                 </div>
@@ -101,12 +103,7 @@ export default function AccountsPage() {
                 )}
                 <div className="mt-3 flex gap-2">
                   <Btn size="sm" variant="outline" onClick={() => setAcctModal(a)}><Pencil size={12} /> Edit</Btn>
-                  <Btn
-                    size="sm" variant="ghost"
-                    onClick={() => updateAccount(a.id, { isActive: false })}
-                  >
-                    Archive
-                  </Btn>
+                  <Btn size="sm" variant="ghost" onClick={() => setArchiveAcct(a)}>Archive</Btn>
                 </div>
               </Card>
             );
@@ -128,7 +125,7 @@ export default function AccountsPage() {
           <Card key={p.id} className="!p-4">
             <div className="flex items-center gap-2">
               <Smartphone size={15} className="text-muted" />
-              <p className="text-sm font-semibold text-ink">{p.name}</p>
+              <p className="min-w-0 truncate text-sm font-semibold text-ink" title={p.name}>{p.name}</p>
               {p.isDemo && <Badge tone="warn">demo</Badge>}
             </div>
             <p className="mt-1 text-[11px] text-muted">
@@ -136,8 +133,8 @@ export default function AccountsPage() {
               {p.linkedAccountId ? ` → ${accounts.find((a) => a.id === p.linkedAccountId)?.name ?? "?"}` : ""}
             </p>
             <div className="mt-2.5 flex gap-2">
-              <Btn size="sm" variant="ghost" onClick={() => setPmModal(p)}><Pencil size={12} /></Btn>
-              <Btn size="sm" variant="ghost" onClick={() => updatePaymentMethod(p.id, { isActive: false })}>Remove</Btn>
+              <Btn size="sm" variant="ghost" onClick={() => setPmModal(p)} aria-label={`Edit ${p.name}`}><Pencil size={12} /></Btn>
+              <Btn size="sm" variant="ghost" onClick={() => setRemovePm(p)}>Remove</Btn>
             </div>
           </Card>
         ))}
@@ -154,6 +151,41 @@ export default function AccountsPage() {
         accounts={accounts}
         onClose={() => setPmModal(null)}
       />
+
+      {/* archive confirm */}
+      <Modal open={!!archiveAcct} onClose={() => setArchiveAcct(null)} title="Archive account?">
+        {archiveAcct && (
+          <div className="space-y-4">
+            <p className="text-sm text-muted">
+              Archive <b className="text-ink">{archiveAcct.name}</b>? It will be hidden everywhere, but its
+              transactions and history are kept. You can re-enable it later by editing.
+            </p>
+            <div className="flex justify-end gap-2">
+              <Btn variant="ghost" onClick={() => setArchiveAcct(null)}>Cancel</Btn>
+              <Btn variant="danger" onClick={async () => { await updateAccount(archiveAcct.id, { isActive: false }); setArchiveAcct(null); }}>
+                Archive
+              </Btn>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* remove payment method confirm */}
+      <Modal open={!!removePm} onClose={() => setRemovePm(null)} title="Remove payment method?">
+        {removePm && (
+          <div className="space-y-4">
+            <p className="text-sm text-muted">
+              Remove <b className="text-ink">{removePm.name}</b>? Past transactions recorded via this method are kept.
+            </p>
+            <div className="flex justify-end gap-2">
+              <Btn variant="ghost" onClick={() => setRemovePm(null)}>Cancel</Btn>
+              <Btn variant="danger" onClick={async () => { await updatePaymentMethod(removePm.id, { isActive: false }); setRemovePm(null); }}>
+                Remove
+              </Btn>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
@@ -182,6 +214,10 @@ function AccountModal({ open, initial, onClose }: { open: boolean; initial: Acco
 
   async function save() {
     if (!name.trim()) return setError("Name is required.");
+    if (type === "credit_card" && billingDay) {
+      const day = Number(billingDay);
+      if (!Number.isInteger(day) || day < 1 || day > 31) return setError("Billing day must be a whole number between 1 and 31.");
+    }
     const openingBalance = toPaise(balance || "0");
     if (initial) {
       await updateAccount(initial.id, {
@@ -221,7 +257,7 @@ function AccountModal({ open, initial, onClose }: { open: boolean; initial: Acco
           <Input inputMode="decimal" placeholder="0.00" value={balance} onChange={(e) => setBalance(e.target.value)} />
         </Field>
         {type === "credit_card" && (
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Field label="Credit limit (₹)">
               <Input inputMode="decimal" placeholder="100000" value={limit} onChange={(e) => setLimit(e.target.value)} />
             </Field>

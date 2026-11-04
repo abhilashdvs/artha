@@ -1,5 +1,5 @@
-import type { Account, Budget, Loan, LoanSummary, Subscription, Txn } from "./types";
-import { monthRange } from "./dates";
+import type { Account, Budget, Category, Loan, LoanSummary, Subscription, Txn } from "./types";
+import { monthKeyOf } from "./dates";
 import { format } from "date-fns";
 
 // ─────────────────────────────────────────────────────────────
@@ -23,8 +23,10 @@ export function deltaFor(t: Txn, accountId: string): number {
     case "expense":
     case "lend":
     case "borrow_repayment":
-    case "investment":
       return out;
+    case "investment":
+      // Source account is debited AND destination account (PPF/FD-style move) is credited.
+      return out + inn;
     case "income":
     case "lend_repayment":
     case "borrow":
@@ -188,21 +190,22 @@ export interface BudgetProgress {
   pctUsed: number;
 }
 
-/** Progress of each active budget against the CURRENT month's spend. */
-export function budgetProgress(budgets: Budget[], txns: Txn[]): BudgetProgress[] {
-  const range = monthRange(0);
-  const startKey = format(range.start, "yyyy-MM-dd");
-  const endKey = format(range.end, "yyyy-MM-dd");
-  const inMonth = txns.filter((t) => {
-    const d = t.date.slice(0, 10);
-    return d >= startKey && d <= endKey;
-  });
+/**
+ * Progress of each active budget against one month's spend.
+ * `monthKey` is a local "yyyy-MM" (defaults to the current month).
+ * When `categories` are provided, a budget set on a parent category
+ * also counts spend recorded against its child categories.
+ */
+export function budgetProgress(budgets: Budget[], txns: Txn[], monthKey?: string, categories?: Category[]): BudgetProgress[] {
+  const key = monthKey ?? format(new Date(), "yyyy-MM");
+  const inMonth = txns.filter((t) => monthKeyOf(t.date) === key);
+  const withChildren = (categoryId: string) =>
+    new Set([categoryId, ...(categories ?? []).filter((c) => c.parentId === categoryId).map((c) => c.id)]);
   return budgets
     .filter((b) => b.isActive)
     .map((budget) => {
-      const relevant = budget.categoryId
-        ? inMonth.filter((t) => t.categoryId === budget.categoryId)
-        : inMonth;
+      const ids = budget.categoryId ? withChildren(budget.categoryId) : null;
+      const relevant = ids ? inMonth.filter((t) => ids.has(t.categoryId ?? "")) : inMonth;
       const spent = Math.max(expenseTotal(relevant), 0);
       const remaining = budget.amount - spent;
       const pctUsed = budget.amount > 0 ? (spent / budget.amount) * 100 : 0;

@@ -22,6 +22,7 @@ export default function LendingPage() {
   const [loanModal, setLoanModal] = useState<Loan | "new" | null>(null);
   const [repayFor, setRepayFor] = useState<Loan | null>(null);
   const [historyFor, setHistoryFor] = useState<Loan | null>(null);
+  const [delLoan, setDelLoan] = useState<Loan | null>(null);
 
   const summaries = useMemo(() => (loans && txns ? loanSummaries(loans, txns) : []), [loans, txns]);
 
@@ -62,8 +63,12 @@ export default function LendingPage() {
         </div>
         <div className="rounded-2xl border border-border bg-card p-4">
           <p className="text-xs text-muted">Recovery rate (lent)</p>
-          <p className="tnum mt-1 text-lg font-bold">
-            {lent.length > 0 ? `${(lent.reduce((s, x) => s + x.recoveryRate, 0) / lent.length).toFixed(0)}%` : "—"}
+          <p className="tnum mt-1 truncate text-lg font-bold" title={lent.length > 0 ? "weighted by principal" : undefined}>
+            {(() => {
+              const paid = lent.reduce((s, x) => s + x.paid, 0);
+              const base = lent.reduce((s, x) => s + x.paid + x.outstanding, 0);
+              return base > 0 ? `${((paid / base) * 100).toFixed(0)}%` : "—";
+            })()}
           </p>
         </div>
       </div>
@@ -94,7 +99,7 @@ export default function LendingPage() {
                       onEdit={() => setLoanModal(s.loan)}
                       onHistory={() => setHistoryFor(s.loan)}
                       onSettle={() => updateLoan(s.loan.id, { status: "settled" })}
-                      onDelete={() => deleteLoan(s.loan.id)}
+                      onDelete={() => setDelLoan(s.loan)}
                     />
                   ))}
                 </div>
@@ -110,7 +115,7 @@ export default function LendingPage() {
                   <li key={s.loan.id} className="flex items-center justify-between py-2 text-sm">
                     <span className="text-muted line-through">{s.loan.personName}</span>
                     <span className="flex items-center gap-2">
-                      <span className="tnum text-xs text-muted">{formatINR(s.loan.amount)}</span>
+                      <span className="tnum text-xs text-muted">{formatINR(s.amount)}</span>
                       <button title="Re-open" onClick={() => updateLoan(s.loan.id, { status: "open" })} className="p-1 text-muted hover:text-ink">
                         <RotateCcw size={12} />
                       </button>
@@ -155,12 +160,29 @@ export default function LendingPage() {
         )}
       </Modal>
 
+      {/* delete confirm */}
+      <Modal open={!!delLoan} onClose={() => setDelLoan(null)} title="Delete person?">
+        {delLoan && (
+          <div className="space-y-4">
+            <p className="text-sm text-muted">
+              Delete <b className="text-ink">{delLoan.personName}</b>? Linked transactions are kept but detached from this record.
+            </p>
+            <div className="flex justify-end gap-2">
+              <Btn variant="ghost" onClick={() => setDelLoan(null)}>Cancel</Btn>
+              <Btn variant="danger" onClick={async () => { await deleteLoan(delLoan.id); setDelLoan(null); }}>
+                Delete
+              </Btn>
+            </div>
+          </div>
+        )}
+      </Modal>
+
       {/* history modal */}
       <Modal open={!!historyFor} onClose={() => setHistoryFor(null)} title={`History — ${historyFor?.personName}`} wide>
         {historyFor && (
           <ul className="max-h-80 space-y-2 overflow-y-auto">
             {loanTransactions(txns, historyFor.id)
-              .sort((a, b) => b.date.localeCompare(a.date))
+              .sort((a, b) => +parseISO(b.date) - +parseISO(a.date))
               .map((t) => (
                 <li key={t.id} className="flex items-center justify-between rounded-xl border border-border px-3 py-2 text-sm">
                   <div>
@@ -186,24 +208,25 @@ function LoanRow({
   onRepay: () => void; onEdit: () => void; onHistory: () => void; onSettle: () => void; onDelete: () => void;
 }) {
   const age = differenceInDays(new Date(), parseISO(s.loan.createdAt));
-  const paidPct = s.loan.amount > 0 ? (s.paid / s.loan.amount) * 100 : 0;
+  // principal is derived from linked transactions (loan rows store amount: 0)
+  const paidPct = s.amount > 0 ? (s.paid / s.amount) * 100 : 0;
   return (
     <div className="rounded-xl border border-border p-3.5">
       <div className="flex items-start justify-between gap-2">
-        <div>
-          <p className="text-sm font-semibold text-ink">
-            {s.loan.personName}
+        <div className="min-w-0">
+          <p className="flex flex-wrap items-center gap-1.5 text-sm font-semibold text-ink">
+            <span className="truncate" title={s.loan.personName}>{s.loan.personName}</span>
             {s.loan.isDemo && <Badge tone="warn">demo</Badge>}
             {s.loan.status === "partial" && <Badge tone="accent">partially repaid</Badge>}
             {s.loan.direction === "lent" && age > 45 && s.outstanding > 0 && <Badge tone="warn">{age}d old</Badge>}
           </p>
-          <p className="mt-0.5 text-[11px] text-muted">
-            {s.loan.direction === "lent" ? "Lent" : "Borrowed"} {formatINR(s.loan.amount)}
+          <p className="mt-0.5 truncate text-[11px] text-muted" title={`${s.loan.direction === "lent" ? "Lent" : "Borrowed"} ${formatINR(s.amount)}${s.loan.dueDate ? ` · due ${fmtDay(s.loan.dueDate)}` : ""}${s.loan.notes ? ` · ${s.loan.notes}` : ""}`}>
+            {s.loan.direction === "lent" ? "Lent" : "Borrowed"} {formatINR(s.amount)}
             {s.loan.dueDate ? ` · due ${fmtDay(s.loan.dueDate)}` : ""}
             {s.loan.notes ? ` · ${s.loan.notes}` : ""}
           </p>
         </div>
-        <div className="text-right">
+        <div className="shrink-0 text-right">
           <p className="tnum text-sm font-bold text-ink">{formatINR(s.outstanding)} <span className="text-[10px] font-normal text-muted">outstanding</span></p>
           <p className="text-[11px] text-muted">{s.recoveryRate.toFixed(0)}% {s.loan.direction === "lent" ? "recovered" : "repaid"}</p>
         </div>

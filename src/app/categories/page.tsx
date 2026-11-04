@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useCategories, useTxns } from "@/lib/hooks";
+import { useBudgets, useCategories, useSubscriptions, useTxns } from "@/lib/hooks";
 import { addCategory, deleteCategoryWith, updateCategory } from "@/lib/db";
 import { formatINR } from "@/lib/money";
 import { filterByRange, monthRange } from "@/lib/dates";
@@ -14,31 +14,49 @@ import { FolderTree, Pencil, Plus, Trash2 } from "lucide-react";
 export default function CategoriesPage() {
   const categories = useCategories();
   const txns = useTxns();
+  const budgets = useBudgets();
+  const subscriptions = useSubscriptions();
   const [modal, setModal] = useState<Category | "new" | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Category | null>(null);
   const [mergeInto, setMergeInto] = useState("");
+  const [delError, setDelError] = useState<string | null>(null);
 
   const monthTxns = useMemo(() => (txns ? filterByRange(txns, monthRange(0)) : []), [txns]);
 
+  // expense minus refund, per category (matches categoryBreakdown in analytics)
   const spendByCat = useMemo(() => {
     const map = new Map<string, number>();
     for (const t of monthTxns) {
-      if (t.type !== "expense" || !t.categoryId) continue;
-      map.set(t.categoryId, (map.get(t.categoryId) ?? 0) + t.amount);
+      if (!t.categoryId) continue;
+      if (t.type === "expense") map.set(t.categoryId, (map.get(t.categoryId) ?? 0) + t.amount);
+      else if (t.type === "refund") map.set(t.categoryId, (map.get(t.categoryId) ?? 0) - t.amount);
     }
     return map;
   }, [monthTxns]);
 
-  if (!categories || !txns) return <div className="py-20 text-center text-sm text-muted">Loading…</div>;
+  if (!categories || !txns || !budgets || !subscriptions) return <div className="py-20 text-center text-sm text-muted">Loading…</div>;
 
   const active = categories.filter((c) => !c.isArchived);
   const roots = active.filter((c) => !c.parentId);
   const childrenOf = (id: string) => active.filter((c) => c.parentId === id);
   const usageCount = (id: string) => txns.filter((t) => t.categoryId === id).length;
+  /** Everything deleteCategoryWith checks: txns + budgets + subscriptions + children. */
+  const fullUsage = (c: Category) => {
+    const t = usageCount(c.id);
+    const b = budgets.filter((x) => x.categoryId === c.id).length;
+    const s = subscriptions.filter((x) => x.categoryId === c.id).length;
+    const k = categories.filter((x) => x.parentId === c.id).length;
+    const parts: string[] = [];
+    if (t) parts.push(`${t} transaction${t > 1 ? "s" : ""}`);
+    if (b) parts.push(`${b} budget${b > 1 ? "s" : ""}`);
+    if (s) parts.push(`${s} subscription${s > 1 ? "s" : ""}`);
+    if (k) parts.push(`${k} sub-categor${k > 1 ? "ies" : "y"}`);
+    return { total: t + b + s + k, label: parts.join(", ") };
+  };
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Categories</h1>
           <p className="text-sm text-muted">Organize spending your way — custom categories & sub-categories</p>
@@ -52,11 +70,11 @@ export default function CategoriesPage() {
           const rootSpend = (spendByCat.get(root.id) ?? 0) + subs.reduce((s, c) => s + (spendByCat.get(c.id) ?? 0), 0);
           return (
             <Card key={root.id}>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <span className="h-3.5 w-3.5 rounded-full" style={{ backgroundColor: root.color }} />
-                  <div>
-                    <p className="text-sm font-semibold text-ink">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <span className="h-3.5 w-3.5 shrink-0 rounded-full" style={{ backgroundColor: root.color }} />
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-ink" title={root.name}>
                       {root.name}
                       <Badge tone={root.kind === "income" ? "good" : "default"}>{root.kind}</Badge>
                       {root.isNeed != null && (
@@ -68,27 +86,27 @@ export default function CategoriesPage() {
                     </p>
                   </div>
                 </div>
-                <div className="flex gap-1.5">
+                <div className="flex shrink-0 gap-1.5">
                   <Btn size="sm" variant="ghost" onClick={() => setModal({ ...root, parentId: root.id, id: "", name: "" } as unknown as Category)}>
                     <Plus size={12} /> Sub
                   </Btn>
-                  <Btn size="sm" variant="ghost" onClick={() => setModal(root)}><Pencil size={12} /></Btn>
-                  <Btn size="sm" variant="ghost" onClick={() => { setDeleteTarget(root); setMergeInto(""); }}><Trash2 size={12} /></Btn>
+                  <Btn size="sm" variant="ghost" aria-label={`Edit ${root.name}`} onClick={() => setModal(root)}><Pencil size={12} /></Btn>
+                  <Btn size="sm" variant="ghost" aria-label={`Delete ${root.name}`} onClick={() => { setDeleteTarget(root); setMergeInto(""); setDelError(null); }}><Trash2 size={12} /></Btn>
                 </div>
               </div>
               {subs.length > 0 && (
                 <ul className="mt-3 space-y-1.5 border-t border-border pt-3">
                   {subs.map((sub) => (
-                    <li key={sub.id} className="flex items-center justify-between text-sm">
-                      <span className="flex items-center gap-2 text-ink">
-                        <span className="h-2 w-2 rounded-full" style={{ backgroundColor: sub.color }} />
-                        {sub.name}
-                        <span className="text-[11px] text-faint">{usageCount(sub.id)} txns</span>
+                    <li key={sub.id} className="flex items-center justify-between gap-2 text-sm">
+                      <span className="flex min-w-0 items-center gap-2 text-ink">
+                        <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: sub.color }} />
+                        <span className="truncate" title={sub.name}>{sub.name}</span>
+                        <span className="shrink-0 text-[11px] text-faint">{usageCount(sub.id)} txns</span>
                       </span>
-                      <span className="flex items-center gap-2">
+                      <span className="flex shrink-0 items-center gap-1">
                         <span className="tnum text-xs text-muted">{formatINR(spendByCat.get(sub.id) ?? 0)}</span>
-                        <button onClick={() => setModal(sub)} className="p-1 text-muted hover:text-ink"><Pencil size={12} /></button>
-                        <button onClick={() => { setDeleteTarget(sub); setMergeInto(""); }} className="p-1 text-muted hover:text-danger"><Trash2 size={12} /></button>
+                        <button onClick={() => setModal(sub)} title="Edit sub-category" aria-label={`Edit ${sub.name}`} className="rounded-lg p-2 text-muted hover:bg-cardhover hover:text-ink"><Pencil size={12} /></button>
+                        <button onClick={() => { setDeleteTarget(sub); setMergeInto(""); setDelError(null); }} title="Delete sub-category" aria-label={`Delete ${sub.name}`} className="rounded-lg p-2 text-muted hover:bg-danger/10 hover:text-danger"><Trash2 size={12} /></button>
                       </span>
                     </li>
                   ))}
@@ -105,35 +123,41 @@ export default function CategoriesPage() {
       <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title={`Delete "${deleteTarget?.name}"?`}>
         {deleteTarget && (
           <div className="space-y-4">
-            {usageCount(deleteTarget.id) > 0 ? (
+            {fullUsage(deleteTarget).total > 0 ? (
               <>
                 <p className="text-sm text-muted">
-                  This category is used by <b className="text-ink">{usageCount(deleteTarget.id)}</b> transactions.
-                  Choose another category to move them to:
+                  This category is used by <b className="text-ink">{fullUsage(deleteTarget).label}</b>.
+                  Choose another {deleteTarget.kind} category to move them to:
                 </p>
                 <Select value={mergeInto} onChange={(e) => setMergeInto(e.target.value)}>
                   <option value="">Select replacement…</option>
                   {active
-                    .filter((c) => c.id !== deleteTarget.id && c.parentId !== deleteTarget.id)
+                    .filter((c) => c.id !== deleteTarget.id && c.parentId !== deleteTarget.id && c.kind === deleteTarget.kind)
                     .map((c) => (
                       <option key={c.id} value={c.id}>{c.parentId ? "— " : ""}{c.name}</option>
                     ))}
                 </Select>
               </>
             ) : (
-              <p className="text-sm text-muted">No transactions use this category. Safe to delete.</p>
+              <p className="text-sm text-muted">Nothing uses this category. Safe to delete.</p>
             )}
+            {delError && <p className="rounded-xl bg-danger/10 px-3 py-2 text-xs font-medium text-danger">{delError}</p>}
             <div className="flex justify-end gap-2">
               <Btn variant="ghost" onClick={() => setDeleteTarget(null)}>Cancel</Btn>
               <Btn
                 variant="danger"
-                disabled={usageCount(deleteTarget.id) > 0 && !mergeInto}
+                disabled={fullUsage(deleteTarget).total > 0 && !mergeInto}
                 onClick={async () => {
-                  await deleteCategoryWith(deleteTarget.id, mergeInto || undefined);
-                  setDeleteTarget(null);
+                  try {
+                    await deleteCategoryWith(deleteTarget.id, mergeInto || undefined);
+                    setDeleteTarget(null);
+                    setDelError(null);
+                  } catch (e) {
+                    setDelError(e instanceof Error ? e.message : "Cannot delete category.");
+                  }
                 }}
               >
-                {usageCount(deleteTarget.id) > 0 ? "Merge & delete" : "Delete"}
+                {fullUsage(deleteTarget).total > 0 ? "Merge & delete" : "Delete"}
               </Btn>
             </div>
           </div>
@@ -186,7 +210,7 @@ function CategoryModal({
     <Modal open={open} onClose={onClose} title={initial && !isNewSub ? "Edit category" : isNewSub ? "New sub-category" : "New category"}>
       <div className="space-y-3">
         <Field label="Name"><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Coffee" /></Field>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Kind">
             <Select value={kind} onChange={(e) => setKind(e.target.value as "expense" | "income")}>
               <option value="expense">Expense</option>

@@ -1,6 +1,6 @@
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
-import { format, isValid, parse } from "date-fns";
+import { format, isValid, parse, parseISO } from "date-fns";
 import type { Category, Txn } from "./types";
 import type { CategorySlice, MonthPoint } from "./analytics";
 import { toPaise, toRupees } from "./money";
@@ -76,12 +76,18 @@ export interface ImportPlan {
 }
 
 export interface ImportItem {
-  date: string; // ISO
+  date: string; // local date-only "yyyy-MM-dd"
   description: string;
   amount: number; // paise, positive
   direction: "debit" | "credit";
   suggestedCategoryId?: string;
   include: boolean;
+}
+
+export interface SkippedRow {
+  row: number; // 1-based data row number
+  description: string;
+  reason: string;
 }
 
 const DATE_HEADERS = ["date", "txn date", "transaction date", "value date"];
@@ -110,10 +116,18 @@ function parseDateLoose(v: string): string | null {
   if (!s) return null;
   for (const f of DATE_FORMATS) {
     const d = parse(s, f, new Date());
-    if (isValid(d)) return d.toISOString();
+    if (isValid(d)) return format(d, "yyyy-MM-dd"); // local date-only, no UTC shift
   }
   const d = new Date(s);
-  return isValid(d) ? d.toISOString() : null;
+  return isValid(d) ? format(d, "yyyy-MM-dd") : null;
+}
+
+/** Signed paise from a statement amount cell. Handles "(1,234.56)" accounting negatives. */
+function parseAmountSigned(raw: string): number {
+  const s = raw.trim();
+  const negParens = /^\(.*\)$/.test(s);
+  const paise = toPaise(s.replace(/[()]/g, ""));
+  return negParens ? -paise : paise;
 }
 
 // keyword → seeded category name
@@ -178,13 +192,13 @@ export async function parseCsvFile(file: File): Promise<Record<string, string>[]
   });
 }
 
-/** Turn raw rows into typed import items with category suggestions. */
+/** Turn raw rows into typed import items with category suggestions + a list of skipped rows. */
 export function previewImport(
   rows: Record<string, string>[],
   plan: ImportPlan,
   categories: Category[],
-): ImportItem[] {
-  if (rows.length === 0) return [];
+): { items: ImportItem[]; skipped: SkippedRow[] } {
+  if (rows.length === 0) return { items: [], skipped: [] };
   const headers = Object.keys(rows[0]);
   const pick = (sel: string, candidates: string[]) =>
     sel !== "auto" && headers.includes(sel) ? sel : findKey(headers, candidates);
@@ -195,8 +209,9 @@ export function previewImport(
   const amountKey = pick(plan.amountCol, AMOUNT_HEADERS);
   const typeKey = pick(plan.typeCol, TYPE_HEADERS);
 
-  const out: ImportItem[] = [];
-  for (const r of rows) {
+  const items: ImportItem[] = [];
+  const skipped: SkippedRow[] = [];
+  rows.forEach((r, idx) => {
     const dateISO = dateKey ? parseDateLoose(String(r[dateKey] ?? "")) : null;
     const description = (descKey ? String(r[descKey] ?? "").trim() : "") || "Imported transaction";
     let amount = 0;
@@ -209,18 +224,26 @@ export function previewImport(
       amount = toPaise(String(r[creditKey]));
       direction = "credit";
     } else if (amountKey) {
-      const raw = String(r[amountKey] ?? "");
-      amount = Math.abs(toPaise(raw));
-      direction = raw.trim().startsWith("-") ? "credit" : "debit";
+      // Single signed amount column: negative = money out (debit), positive = money in (credit).
+      const signed = parseAmountSigned(String(r[amountKey] ?? ""));
+      amount = Math.abs(signed);
+      direction = signed < 0 ? "debit" : "credit";
     }
 
     const typeCell = typeKey ? String(r[typeKey] ?? "").toLowerCase() : "";
     if (/\bcr(edit)?\b|deposit/.test(typeCell)) direction = "credit";
     if (/\bdr|debit|withdraw/.test(typeCell)) direction = "debit";
 
-    if (!dateISO || amount <= 0) continue;
+    if (!dateISO) {
+      skipped.push({ row: idx + 1, description, reason: "Missing or unrecognised date" });
+      return;
+    }
+    if (amount <= 0) {
+      skipped.push({ row: idx + 1, description, reason: "Missing or zero amount" });
+      return;
+    }
     const kind = direction === "debit" ? "expense" : "income";
-    out.push({
+    items.push({
       date: dateISO,
       description,
       amount,
@@ -228,8 +251,8 @@ export function previewImport(
       suggestedCategoryId: suggestCategoryId(description, kind, categories),
       include: true,
     });
-  }
-  return out;
+  });
+  return { items, skipped };
 }
 
 /** Insert import items, skipping duplicates of existing transactions. */
@@ -240,7 +263,7 @@ export async function runImport(
   categories: Category[],
 ): Promise<{ inserted: number; dupes: number }> {
   const sig = (d: string, amt: number, desc: string) =>
-    `${d.slice(0, 10)}|${amt}|${desc.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 24)}`;
+    `${format(parseISO(d), "yyyy-MM-dd")}|${amt}|${desc.toLowerCase().replace(/[^a-z0-9]/g, "")}`;
   const existingSigs = new Set(existing.map((t) => sig(t.date, t.amount, t.description)));
   const learned = learnCategoryMap(existing);
   const seen = new Set<string>();

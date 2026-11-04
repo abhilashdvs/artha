@@ -106,7 +106,7 @@ export function generateInsights(
   }
 
   // 5. Budget breaches
-  const breaches = budgetProgress(budgets, txns).filter((b) => b.pctUsed > 100);
+  const breaches = budgetProgress(budgets, txns, undefined, categories).filter((b) => b.pctUsed > 100);
   for (const b of breaches.slice(0, 3)) {
     const name = b.budget.categoryId
       ? categories.find((c) => c.id === b.budget.categoryId)?.name ?? "Category"

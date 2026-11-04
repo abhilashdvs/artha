@@ -3,6 +3,7 @@
 @tailwind utilities;
 
 :root {
+  color-scheme: light;
   --bg: #f6f7f9;
   --card: #ffffff;
   --cardhover: #f1f2f5;
@@ -15,9 +16,11 @@
   --danger: #e11d48;
   --warn: #d97706;
   --good: #059669;
+  --violet: #7c3aed;
 }
 
 .dark {
+  color-scheme: dark;
   --bg: #0b0f17;
   --card: #111827;
   --cardhover: #1c2536;
@@ -30,6 +33,7 @@
   --danger: #fb4d6d;
   --warn: #f59e0b;
   --good: #34d399;
+  --violet: #a78bfa;
 }
 
 html, body {

@@ -8,8 +8,16 @@ import {
 import { CHART_COLORS } from "@/lib/utils";
 
 // ─────────────────────────────────────────────────────────────
-// Recharts wrappers themed via CSS vars.
+// Recharts wrappers themed via CSS vars (var(--accent) etc. are
+// defined per-theme in globals.css, so fills follow dark/light).
 // ─────────────────────────────────────────────────────────────
+
+const ACCENT = "var(--accent)";
+const GOOD = "var(--good)";
+const DANGER = "var(--danger)";
+
+/** Truncate long tick labels (full name still shows in tooltip). */
+const truncName = (s: string, max = 14) => (s.length > max ? `${s.slice(0, max - 1)}…` : s);
 
 const tooltipStyle: React.CSSProperties = {
   backgroundColor: "var(--card)",
@@ -34,14 +42,14 @@ export function IncomeExpenseChart({ data }: { data: { label: string; income: nu
         <YAxis tick={axisStyle} axisLine={false} tickLine={false} tickFormatter={(v) => formatINRCompact(v)} width={56} />
         <Tooltip contentStyle={tooltipStyle} formatter={inrTooltip} />
         <Legend wrapperStyle={{ fontSize: 12 }} />
-        <Bar dataKey="income" name="Income" fill="#10b981" radius={[4, 4, 0, 0]} />
-        <Bar dataKey="expense" name="Expenses" fill="#f43f5e" radius={[4, 4, 0, 0]} />
+        <Bar dataKey="income" name="Income" fill={GOOD} radius={[4, 4, 0, 0]} />
+        <Bar dataKey="expense" name="Expenses" fill={DANGER} radius={[4, 4, 0, 0]} />
       </BarChart>
     </ResponsiveContainer>
   );
 }
 
-export function TrendChart<T extends { label: string }>({ data, dataKey = "expense", color = "#6366f1", name = "Spending" }: {
+export function TrendChart<T extends { label: string }>({ data, dataKey = "expense", color = ACCENT, name = "Spending" }: {
   data: T[]; dataKey?: string; color?: string; name?: string;
 }) {
   return (
@@ -64,12 +72,25 @@ export function TrendChart<T extends { label: string }>({ data, dataKey = "expen
 }
 
 export function DonutChart({ data }: { data: { name: string; value: number; color?: string }[] }) {
+  // Cap legend/slice count: merge the tail into "Other" so long category
+  // lists don't produce an unreadable legend.
+  const MAX_SLICES = 8;
+  const sliced =
+    data.length > MAX_SLICES
+      ? [
+          ...data.slice(0, MAX_SLICES - 1),
+          {
+            name: "Other",
+            value: data.slice(MAX_SLICES - 1).reduce((s, d) => s + d.value, 0),
+          },
+        ]
+      : data;
   const total = data.reduce((s, d) => s + d.value, 0);
   return (
     <ResponsiveContainer width="100%" height={260}>
       <PieChart>
-        <Pie data={data} dataKey="value" nameKey="name" innerRadius={62} outerRadius={92} paddingAngle={2} strokeWidth={0}>
-          {data.map((d, i) => (
+        <Pie data={sliced} dataKey="value" nameKey="name" innerRadius={62} outerRadius={92} paddingAngle={2} strokeWidth={0}>
+          {sliced.map((d, i) => (
             <Cell key={i} fill={d.color ?? CHART_COLORS[i % CHART_COLORS.length]} />
           ))}
         </Pie>
@@ -92,9 +113,9 @@ export function HBarChart({ data, name = "Amount" }: { data: { name: string; tot
       <BarChart data={data} layout="vertical">
         <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
         <XAxis type="number" tick={axisStyle} axisLine={false} tickLine={false} tickFormatter={(v) => formatINRCompact(v)} />
-        <YAxis type="category" dataKey="name" tick={axisStyle} axisLine={false} tickLine={false} width={110} />
+        <YAxis type="category" dataKey="name" tick={axisStyle} axisLine={false} tickLine={false} width={110} tickFormatter={(v) => truncName(String(v))} />
         <Tooltip contentStyle={tooltipStyle} formatter={inrTooltip} />
-        <Bar dataKey="total" name={name} fill="#6366f1" radius={[0, 4, 4, 0]} />
+        <Bar dataKey="total" name={name} fill={ACCENT} radius={[0, 4, 4, 0]} />
       </BarChart>
     </ResponsiveContainer>
   );
@@ -108,7 +129,7 @@ export function SavingsRateChart({ data }: { data: { label: string; savingsRate:
         <XAxis dataKey="label" tick={axisStyle} axisLine={false} tickLine={false} />
         <YAxis tick={axisStyle} axisLine={false} tickLine={false} tickFormatter={(v) => `${v}%`} width={44} />
         <Tooltip contentStyle={tooltipStyle} formatter={(v: unknown) => [`${Number(v ?? 0)}%`, "Savings rate"]} />
-        <Line type="monotone" dataKey="savingsRate" stroke="#10b981" strokeWidth={2} dot={{ r: 3 }} />
+        <Line type="monotone" dataKey="savingsRate" stroke={GOOD} strokeWidth={2} dot={{ r: 3 }} />
       </LineChart>
     </ResponsiveContainer>
   );
@@ -122,7 +143,7 @@ export function ScoreLineChart({ data }: { data: { label: string; score: number 
         <XAxis dataKey="label" tick={axisStyle} axisLine={false} tickLine={false} />
         <YAxis domain={[0, 100]} tick={axisStyle} axisLine={false} tickLine={false} width={36} />
         <Tooltip contentStyle={tooltipStyle} />
-        <Line type="monotone" dataKey="score" name="Health score" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 3 }} />
+        <Line type="monotone" dataKey="score" name="Health score" stroke="var(--violet)" strokeWidth={2} dot={{ r: 3 }} />
       </LineChart>
     </ResponsiveContainer>
   );

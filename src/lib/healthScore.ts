@@ -1,4 +1,4 @@
-import { format, parseISO, subMonths } from "date-fns";
+import { endOfMonth, format, min, parseISO, subMonths } from "date-fns";
 import type { Account, Budget, Category, HealthScoreBreakdown, Loan, Txn } from "./types";
 import { budgetProgress, expenseTotal, incomeTotal, loanSummaries } from "./finance";
 import { getSettingSync } from "./db";
@@ -31,12 +31,17 @@ interface Weights {
 
 const DEFAULT_WEIGHTS: Weights = { savings: 40, budget: 25, debt: 20, lending: 15 };
 
+/** Active weights: defaults merged with the user's "customWeights" setting. */
+export function activeWeights(): Weights {
+  return { ...DEFAULT_WEIGHTS, ...getSettingSync<Partial<Weights>>("customWeights", {}) };
+}
+
 function clampScore(n: number): number {
   return Math.max(0, Math.min(100, Math.round(n)));
 }
 
 function scoreMonth(monthKey: string, ctx: HealthScoreCtx): HealthScoreBreakdown {
-  const w = { ...DEFAULT_WEIGHTS, ...getSettingSync<Partial<Weights>>("customWeights", {}) };
+  const w = activeWeights();
   const scoped = ctx.txns.filter((t) => monthKeyOf(t.date) === monthKey);
   const income = incomeTotal(scoped);
   const expense = expenseTotal(scoped);
@@ -47,15 +52,20 @@ function scoreMonth(monthKey: string, ctx: HealthScoreCtx): HealthScoreBreakdown
 
   // budget (0-25 raw): start full, −8 per breached budget, −4 per >90% budget
   let budgetRaw = w.budget;
-  const progress = budgetProgress(ctx.budgets, ctx.txns);
+  const progress = budgetProgress(ctx.budgets, ctx.txns, monthKey, ctx.categories);
   for (const b of progress) {
     if (b.pctUsed > 100) budgetRaw -= 8;
     else if (b.pctUsed > 90) budgetRaw -= 4;
   }
   budgetRaw = Math.max(0, Math.min(w.budget, budgetRaw));
 
+  // Loans/overdues are evaluated as of the END of the scored month
+  // (or today, when scoring the current month) — not as of now.
+  const asOfKey = format(min([endOfMonth(parseISO(`${monthKey}-01`)), new Date()]), "yyyy-MM-dd");
+  const txnsAsOf = ctx.txns.filter((t) => format(parseISO(t.date), "yyyy-MM-dd") <= asOfKey);
+
   // debt (0-20 raw): borrowed outstanding as multiple of monthly income
-  const summaries = loanSummaries(ctx.loans, ctx.txns);
+  const summaries = loanSummaries(ctx.loans, txnsAsOf);
   const borrowed = summaries
     .filter((s) => s.loan.direction === "borrowed")
     .reduce((s, x) => s + x.outstanding, 0);
@@ -63,9 +73,8 @@ function scoreMonth(monthKey: string, ctx: HealthScoreCtx): HealthScoreBreakdown
   const debtRaw = Math.max(0, w.debt * (1 - Math.min(debtRatio / 3, 1)));
 
   // lending (0-15 raw): overdue lent money drags the score
-  const today = format(new Date(), "yyyy-MM-dd");
   const lentOverdue = summaries
-    .filter((s) => s.loan.direction === "lent" && s.outstanding > 0 && s.loan.dueDate && s.loan.dueDate < today)
+    .filter((s) => s.loan.direction === "lent" && s.outstanding > 0 && s.loan.dueDate && s.loan.dueDate < asOfKey)
     .reduce((s, x) => s + x.outstanding, 0);
   const lendRatio = income > 0 ? lentOverdue / income : lentOverdue > 0 ? 99 : 0;
   const lendingRaw = Math.max(0, w.lending * (1 - Math.min(lendRatio, 1)));
