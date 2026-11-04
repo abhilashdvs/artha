@@ -3,7 +3,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { Table, Transaction } from "dexie";
 import { useSyncExternalStore } from "react";
-import { db } from "./db";
+import { db, seedDefaults } from "./db";
 
 // ─────────────────────────────────────────────────────────────
 // Cloud sync (Supabase).
@@ -227,6 +227,7 @@ async function doFlush(): Promise<void> {
   const items = readOutbox();
   if (items.length === 0) return;
   setStatus({ state: "syncing" });
+  const rejected: string[] = [];
   try {
     const byTable = new Map<string, string[]>();
     for (const it of items) {
@@ -251,8 +252,7 @@ async function doFlush(): Promise<void> {
       const ups = rows.filter((r): r is Row => !!r && !r.isDemo).map((r) => toRemote(lt, r, userId!));
       const dels = valid.filter((_, i) => !rows[i]);
       for (let i = 0; i < ups.length; i += 500) {
-        const { error } = await c.from(TABLES[lt].remote).upsert(ups.slice(i, i + 500), { onConflict: "id" });
-        if (error) throw error;
+        await upsertResilient(c, TABLES[lt].remote, ups.slice(i, i + 500), rejected);
       }
       for (let i = 0; i < dels.length; i += 200) {
         const { error } = await c.from(TABLES[lt].remote).delete().in("id", dels.slice(i, i + 200));
@@ -262,9 +262,34 @@ async function doFlush(): Promise<void> {
     // drop what we pushed; keep anything queued meanwhile
     const done = new Set(items);
     writeOutbox(readOutbox().filter((k) => !done.has(k)));
-    setStatus({ state: "synced", lastSynced: new Date().toISOString(), error: null });
+    setStatus(
+      rejected.length
+        ? { state: "error", error: `${rejected.length} item(s) couldn't be saved to the cloud: ${rejected[0]}` }
+        : { state: "synced", lastSynced: new Date().toISOString(), error: null },
+    );
   } catch (e) {
     setStatus({ state: "error", error: e instanceof Error ? e.message : String((e as { message?: string })?.message ?? e) });
+  }
+}
+
+/**
+ * Upsert a batch. If the database rejects it because of bad data in one row
+ * (constraint / type errors), retry row by row and skip only the bad rows so
+ * a single bad record can never block syncing forever. Network and auth
+ * errors are re-thrown so the whole batch is retried later.
+ */
+async function upsertResilient(c: SupabaseClient, remote: string, rows: Row[], rejected: string[]) {
+  const { error } = await c.from(remote).upsert(rows, { onConflict: "id" });
+  if (!error) return;
+  const isDataError = (code?: string) => !!code && (code.startsWith("22") || code.startsWith("23"));
+  if (!isDataError(error.code)) throw error;
+  for (const row of rows) {
+    const r = await c.from(remote).upsert(row, { onConflict: "id" });
+    if (r.error) {
+      if (!isDataError(r.error.code)) throw r.error;
+      rejected.push(`${remote} ${row.id}: ${r.error.message}`);
+      console.warn("[artha sync] skipped row", remote, row.id, r.error.message);
+    }
   }
 }
 
@@ -336,18 +361,29 @@ async function link(uid: string, email: string | null) {
   userId = uid;
   setStatus({ email, state: "syncing", error: null });
   try {
-    if (localStorage.getItem(LINKED_KEY) !== uid) {
+    const previous = localStorage.getItem(LINKED_KEY);
+    if (previous !== uid) {
       // First time this browser links to this account.
       writeOutbox([]);
+      if (previous) {
+        // Another account used this browser before (e.g. its session expired):
+        // never upload their data into this account — clear it locally instead.
+        await clearLocalAccountData();
+      }
       if (await cloudIsEmpty(c)) {
-        const keys: string[] = [];
-        for (const t of LOCAL_TABLES) {
-          const ids = await table(t).filter((r) => !r.isDemo).primaryKeys();
-          keys.push(...ids.map((id) => `${t}|${id}`));
+        if (previous) {
+          // brand-new account on a shared browser: start from fresh defaults (queued for upload by the hooks)
+          await seedDefaults(true);
+        } else {
+          const keys: string[] = [];
+          for (const t of LOCAL_TABLES) {
+            const ids = await table(t).filter((r) => !r.isDemo).primaryKeys();
+            keys.push(...ids.map((id) => `${t}|${id}`));
+          }
+          const settingKeys = await db.settings.toCollection().primaryKeys();
+          keys.push(...settingKeys.map(String).filter((k) => !LOCAL_ONLY_SETTINGS.has(k)).map((k) => `settings|${k}`));
+          writeOutbox(keys);
         }
-        const settingKeys = await db.settings.toCollection().primaryKeys();
-        keys.push(...settingKeys.map(String).filter((k) => !LOCAL_ONLY_SETTINGS.has(k)).map((k) => `settings|${k}`));
-        writeOutbox(keys);
       }
       localStorage.setItem(LINKED_KEY, uid);
     }
@@ -448,8 +484,21 @@ export async function signOut(): Promise<void> {
   const c = supabase();
   if (!c) return;
   await flush();
+  if (readOutbox().length > 0) {
+    throw new Error("Some changes haven't been saved to the cloud yet. Check your connection, tap Sync now, then sign out.");
+  }
   await c.auth.signOut();
   userId = null;
+  await clearLocalAccountData();
+  try {
+    localStorage.removeItem(LINKED_KEY);
+    localStorage.removeItem(OUTBOX_KEY);
+  } catch { /* ignore */ }
+  setStatus({ email: null, state: "off", lastSynced: null, error: null });
+}
+
+/** Remove synced (non-demo) rows and synced settings from this browser. */
+async function clearLocalAccountData(): Promise<void> {
   applyingRemote = true;
   try {
     await db.transaction("rw", [...LOCAL_TABLES.map(table), db.settings], async () => {
@@ -463,11 +512,6 @@ export async function signOut(): Promise<void> {
   } finally {
     applyingRemote = false;
   }
-  try {
-    localStorage.removeItem(LINKED_KEY);
-    localStorage.removeItem(OUTBOX_KEY);
-  } catch { /* ignore */ }
-  setStatus({ email: null, state: "off", lastSynced: null, error: null });
 }
 
 /** Delete every cloud row for the signed-in user (used by "Wipe all data"). */
@@ -484,3 +528,6 @@ export async function wipeCloud(): Promise<void> {
 export function isSignedIn(): boolean {
   return userId !== null;
 }
+
+/** Internal helpers exposed for unit tests only. */
+export const __test = { toRemote, toLocal };

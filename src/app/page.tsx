@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  addMonths, differenceInCalendarDays, endOfMonth, format, parseISO, startOfMonth, startOfToday, subMonths,
+  addMonths, differenceInCalendarDays, endOfDay, endOfMonth, format, parseISO, startOfMonth, startOfToday, subMonths,
 } from "date-fns";
 import {
   ArrowDownRight, ArrowUpRight, CalendarClock, ChevronLeft, ChevronRight, Lightbulb,
@@ -66,10 +66,11 @@ export default function HomePage() {
     const now = new Date();
     const monthStart = startOfMonth(subMonths(now, offset));
     const isCurrent = offset === 0;
-    const range = { start: monthStart, end: isCurrent ? now : endOfMonth(monthStart) };
+    // include anything dated later today (the add form allows times up to 23:59)
+    const range = { start: monthStart, end: isCurrent ? endOfDay(now) : endOfMonth(monthStart) };
     // compare like-for-like: for the current month, last month up to the same day
     const prevStart = startOfMonth(subMonths(monthStart, 1));
-    const prevRange = { start: prevStart, end: isCurrent ? addMonths(now, -1) : endOfMonth(prevStart) };
+    const prevRange = { start: prevStart, end: isCurrent ? endOfDay(addMonths(now, -1)) : endOfMonth(prevStart) };
 
     const monthTxns = filterByRange(txns, range);
     const income = incomeTotal(monthTxns);
@@ -79,7 +80,7 @@ export default function HomePage() {
 
     const nw = netWorth(accounts.filter((a) => a.isActive), balances, loans, txns);
 
-    const overall = budgets.find((b) => !b.categoryId);
+    const overall = budgets.find((b) => b.isActive && !b.categoryId);
     const limit = overall?.amount ?? income;
 
     const cats = categoryBreakdown(monthTxns, categories);

@@ -149,7 +149,7 @@ function TransactionsInner() {
 
       {/* one-line totals */}
       <p className="text-sm text-muted">
-        {filtered.length} entries · spent <b className="tnum text-ink">{formatINR(totals.net)}</b>
+        {filtered.length} {filtered.length === 1 ? "entry" : "entries"} · spent <b className="tnum text-ink">{formatINR(totals.net)}</b>
         {totals.inc > 0 && <> · received <b className="tnum text-good">{formatINR(totals.inc)}</b></>}
         {totals.inv > 0 && <> · invested <b className="tnum text-ink">{formatINR(totals.inv)}</b></>}
       </p>

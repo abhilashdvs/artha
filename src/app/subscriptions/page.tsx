@@ -105,10 +105,14 @@ export default function SubscriptionsPage() {
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <p className="truncate text-sm font-semibold text-ink">{s.name}</p>
-                      {s.isDemo && <Badge tone="warn">demo</Badge>}
-                      <Badge>{CYCLE_LABEL[s.cycle]}</Badge>
+                      {/* badges only where there's room; on phones the cycle moves into the line below */}
+                      <span className="hidden shrink-0 items-center gap-2 sm:flex">
+                        {s.isDemo && <Badge tone="warn">demo</Badge>}
+                        <Badge>{CYCLE_LABEL[s.cycle]}</Badge>
+                      </span>
                     </div>
                     <p className="mt-0.5 truncate text-[11px] text-muted" title={`${cat?.name ?? "Uncategorised"}${acct ? ` · ${acct.name}` : ""} · due ${fmtDay(s.due)}`}>
+                      <span className="sm:hidden">{CYCLE_LABEL[s.cycle]} · </span>
                       {cat?.name ?? "Uncategorised"}{acct ? ` · ${acct.name}` : ""} · due {fmtDay(s.due)}
                     </p>
                   </div>

@@ -19,6 +19,7 @@ payment methods (UPI, Cash, Debit Card). Open **Settings → Demo mode** to expl
 ```bash
 npm run build      # production build
 npx tsc --noEmit   # type check
+npm test           # financial-rules + sync regression tests
 ```
 
 ## How it's organised
