@@ -1,9 +1,27 @@
 # Artha — Personal Finance & Expense Intelligence
 
+**Know your money. Own your future.** · Live at **https://artha-self.vercel.app**
+
 Artha (अर्थ — *wealth, meaning*) is a local-first personal finance app for India. It tracks
 accounts, credit cards, transactions, budgets, subscriptions, lending/borrowing, goals and
 income, then turns that data into analytics, plain-language insights and a monthly financial
-health score — all in INR, all in your browser.
+health score — all in INR. Sign in to sync across your phone and laptop.
+
+## Screenshots
+
+> All screenshots use the built-in demo data — no real financial information.
+
+**Home** — what you spent this month, key numbers, where the money went, tips and bills due soon
+![Home](docs/screenshots/home.jpg)
+
+**On your phone** — Home, the quick add form, and the sign-in screen
+![Mobile: Home, add transaction, sign in](docs/screenshots/mobile.jpg)
+
+| Activity | Plan (budgets) |
+| --- | --- |
+| ![Activity](docs/screenshots/activity.jpg) | ![Plan – budgets](docs/screenshots/plan-budgets.jpg) |
+| **Insights** | **People (lending & borrowing)** |
+| ![Insights](docs/screenshots/insights.jpg) | ![People](docs/screenshots/people.jpg) |
 
 ## Quick start
 
