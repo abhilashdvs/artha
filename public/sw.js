@@ -2,7 +2,7 @@
 // Pages: network first, fall back to the last cached copy when offline.
 // Build assets (/_next/static, icons): cache first — their names change on every deploy.
 // Supabase / other origins are never cached (your data sync always goes to the network).
-const CACHE = "artha-v1";
+const CACHE = "artha-v2"; // bump to refresh cached icons/pages
 const SHELL = ["/", "/transactions", "/plan", "/lending", "/settings", "/manifest.webmanifest", "/icons/icon-192.png"];
 
 self.addEventListener("install", (event) => {

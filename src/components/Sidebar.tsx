@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
   BarChart3, CalendarCheck, FolderTree, FileSpreadsheet, HandCoins, Home,
-  LayoutGrid, ListOrdered, Moon, Plus, Settings, Sun, Wallet, Zap,
+  LayoutGrid, ListOrdered, Moon, Plus, Settings, Sun, Wallet,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
@@ -109,8 +109,8 @@ export function Sidebar() {
     <aside className="fixed inset-y-0 left-0 z-40 hidden w-56 flex-col border-r border-border bg-card lg:flex">
       <div className="flex items-center justify-between px-5 py-5">
         <Link href="/" className="flex items-center gap-2">
-          <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-accent text-white">
-            <Zap size={16} />
+          <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-accent text-[17px] font-bold leading-none text-white" aria-hidden>
+            अ
           </span>
           <span className="text-lg font-bold tracking-tight text-ink">Artha</span>
         </Link>
