@@ -12,6 +12,7 @@ import { useEffect, useState } from "react";
 import { useDemoMode } from "@/lib/hooks";
 import { Modal } from "./ui";
 import { openQuickAdd } from "./QuickAdd";
+import { useSyncStatus } from "@/lib/sync";
 
 // Main sections — what you use every day.
 const MAIN = [
@@ -65,6 +66,29 @@ function DemoNote() {
   );
 }
 
+function SyncNote() {
+  const s = useSyncStatus();
+  if (!s.configured) return <p className="px-2 text-[10px] text-faint">Your data stays in this browser</p>;
+  const label = !s.email
+    ? "Sign in to sync across devices"
+    : s.state === "error"
+      ? "Sync problem — tap to retry"
+      : s.state === "syncing"
+        ? "Syncing…"
+        : "Synced";
+  return (
+    <Link href="/settings" className="flex items-center gap-2 rounded-lg px-2 py-1 text-[11px] text-muted hover:bg-cardhover hover:text-ink">
+      <span
+        className={cn(
+          "h-2 w-2 shrink-0 rounded-full",
+          !s.email ? "bg-faint" : s.state === "error" ? "bg-danger" : s.state === "syncing" ? "bg-warn" : "bg-good"
+        )}
+      />
+      <span className="truncate">{label}</span>
+    </Link>
+  );
+}
+
 export function Sidebar() {
   const isActive = useIsActive();
   const link = (item: { href: string; label: string; icon: typeof Home }, active: boolean, small = false) => (
@@ -110,7 +134,7 @@ export function Sidebar() {
 
       <div className="space-y-2 px-3 pb-4">
         <DemoNote />
-        <p className="px-2 text-[10px] text-faint">Your data stays in this browser</p>
+        <SyncNote />
       </div>
     </aside>
   );
@@ -180,6 +204,7 @@ export function MobileNav() {
         </div>
         <div className="mt-4 space-y-3">
           <DemoNote />
+          <SyncNote />
           <div className="flex items-center justify-between px-1">
             <span className="text-xs text-muted">Light / dark</span>
             <ThemeToggle />

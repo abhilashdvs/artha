@@ -71,6 +71,18 @@ More sheet). Colours live as CSS variables in `src/app/globals.css`.
 - Every insight shows its calculation (`insight.calc`) — no black-box numbers.
 - Demo data is clearly labelled and removable; real use starts from honest empty states.
 
+## Cloud sync & deployment
+
+- **Supabase** (project `artha`, Mumbai) stores your data when you sign in (Settings → Sign in to sync).
+  The browser keeps a working copy so the app is instant and works offline; changes are pushed
+  automatically and the latest copy is pulled on open, focus and reconnect (`src/lib/sync.ts`).
+  Demo data is never uploaded. Every table has Row Level Security — you can only read your own rows.
+- **Vercel** hosts the site and redeploys on every push to `main`.
+- Setup: run `supabase/schema.sql` in the Supabase SQL editor, then set `NEXT_PUBLIC_SUPABASE_URL` and
+  `NEXT_PUBLIC_SUPABASE_ANON_KEY` (the *publishable* key) in `.env.local` and in Vercel → Environment
+  Variables. See `.env.example`. Add the Vercel URL under Supabase → Authentication → URL Configuration.
+- Without those variables the app runs fully local, exactly as before.
+
 ## Tech
 
 - **Next.js 14** (App Router) + **TypeScript** + **Tailwind CSS**
@@ -109,7 +121,7 @@ supabase/
 
 ## Roadmap
 
-- [ ] Supabase auth + sync (schema ready in `supabase/schema.sql`)
+- [x] Supabase auth + sync
 - [ ] Recurring transaction auto-creation from subscriptions
 - [ ] PWA / offline install
-- [ ] Vercel deployment
+- [x] Vercel deployment

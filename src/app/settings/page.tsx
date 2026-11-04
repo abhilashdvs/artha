@@ -7,7 +7,9 @@ import { exportTxnsCsv } from "@/lib/csv";
 import { downloadFile } from "@/lib/utils";
 import { Btn, Card, CardTitle, Modal } from "@/components/ui";
 import { format } from "date-fns";
-import { AlertTriangle, Database, Download, Sparkles, Trash2 } from "lucide-react";
+import { AlertTriangle, Download, Sparkles, Trash2 } from "lucide-react";
+import { AccountSync } from "@/components/AccountSync";
+import { isSignedIn, wipeCloud } from "@/lib/sync";
 
 export default function SettingsPage() {
   const demo = useDemoMode();
@@ -20,24 +22,10 @@ export default function SettingsPage() {
     <div className="mx-auto max-w-2xl space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
-        <p className="text-sm text-muted">Data, demo mode and housekeeping</p>
+        <p className="text-sm text-muted">Account, sync, demo data and backups</p>
       </div>
 
-      <Card>
-        <CardTitle title="Data Storage" sub="Where your data lives" />
-        <div className="flex items-start gap-3 text-sm text-muted">
-          <Database size={16} className="mt-0.5 shrink-0 text-accent" />
-          <div>
-            <p>
-              Everything is stored <b className="text-ink">locally in this browser</b> (IndexedDB). Nothing leaves your device.
-              Clearing browser data will erase it — export CSV backups regularly from the Reports page.
-            </p>
-            <p className="mt-2 text-[11px] text-faint">
-              Cloud sync with Supabase is planned; the data model is already compatible.
-            </p>
-          </div>
-        </div>
-      </Card>
+      <AccountSync />
 
       <Card>
         <CardTitle title="Demo Mode" sub="Explore with realistic sample data" />
@@ -75,6 +63,7 @@ export default function SettingsPage() {
         <CardTitle title="Danger Zone" sub="Irreversible actions" />
         <p className="mb-4 text-xs text-muted">
           Wipes <b className="text-ink">all</b> data — accounts, transactions, budgets, loans, subscriptions, goals, custom categories — and resets the app to factory state.
+          {isSignedIn() && " This also deletes your synced copy in the cloud, on every device."}
         </p>
         <Btn variant="danger" onClick={() => setWipeOpen(true)}>
           <AlertTriangle size={14} /> Wipe all data
@@ -84,7 +73,7 @@ export default function SettingsPage() {
       <Modal open={wipeOpen} onClose={() => setWipeOpen(false)} title="Wipe ALL data?">
         <div className="space-y-4">
           <p className="text-sm text-muted">
-            This permanently deletes everything stored in this browser. There is no undo.
+            This permanently deletes everything stored in this browser{isSignedIn() ? " and in your cloud account" : ""}. There is no undo.
             Type <b className="text-ink">DELETE</b> to confirm.
           </p>
           <input
@@ -98,7 +87,11 @@ export default function SettingsPage() {
             <Btn
               variant="danger"
               disabled={confirmText !== "DELETE"}
-              onClick={async () => { await wipeAllData(); setWipeOpen(false); }}
+              onClick={async () => {
+                if (isSignedIn()) await wipeCloud();
+                await wipeAllData();
+                setWipeOpen(false);
+              }}
             >
               Wipe everything
             </Btn>

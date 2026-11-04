@@ -1,8 +1,8 @@
 # AGENTS.md — Artha
 
-Personal finance & expense intelligence web app (India, INR). Local-first: all data lives in
-browser IndexedDB via Dexie. No backend yet — `supabase/schema.sql` is a future sync target
-only. Do NOT wire up Supabase or deploy unless the user explicitly asks.
+Personal finance & expense intelligence web app (India, INR). Local-first: the browser
+(IndexedDB via Dexie) is the working copy; when signed in, `src/lib/sync.ts` mirrors every change
+to Supabase (project `artha`) and pulls the cloud copy back. Hosted on Vercel (auto-deploys `main`).
 
 ## Commands
 
