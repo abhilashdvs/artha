@@ -9,6 +9,7 @@ import { Btn, Card, CardTitle, Modal } from "@/components/ui";
 import { format } from "date-fns";
 import { AlertTriangle, Download, Sparkles, Trash2 } from "lucide-react";
 import { AccountSync } from "@/components/AccountSync";
+import { InstallApp } from "@/components/InstallApp";
 import { isSignedIn, wipeCloud } from "@/lib/sync";
 
 export default function SettingsPage() {
@@ -26,6 +27,8 @@ export default function SettingsPage() {
       </div>
 
       <AccountSync />
+
+      <InstallApp />
 
       <Card>
         <CardTitle title="Demo Mode" sub="Explore with realistic sample data" />

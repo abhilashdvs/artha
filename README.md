@@ -98,7 +98,12 @@ More sheet). Colours live as CSS variables in `src/app/globals.css`.
   The browser keeps a working copy so the app is instant and works offline; changes are pushed
   automatically and the latest copy is pulled on open, focus and reconnect (`src/lib/sync.ts`).
   Demo data is never uploaded. Every table has Row Level Security — you can only read your own rows.
-- **Vercel** hosts the site and redeploys on every push to `main`.
+- **Vercel** hosts the site and redeploys on every push to `main`. Always use
+  `artha-self.vercel.app` — other per-deploy `*.vercel.app` addresses redirect there, because
+  browsers remember your login per address. You stay signed in until you press Sign out.
+- **Installable app (PWA):** Settings → *Install Artha* (Android / desktop), or on iPhone Safari
+  Share → *Add to Home Screen*. Opens full-screen with the Artha icon and works offline
+  (`src/app/manifest.ts`, `public/sw.js`, icons in `public/icons/`).
 - Setup: run `supabase/schema.sql` in the Supabase SQL editor, then set `NEXT_PUBLIC_SUPABASE_URL` and
   `NEXT_PUBLIC_SUPABASE_ANON_KEY` (the *publishable* key) in `.env.local` and in Vercel → Environment
   Variables. See `.env.example`. Add the Vercel URL under Supabase → Authentication → URL Configuration.
@@ -144,5 +149,5 @@ supabase/
 
 - [x] Supabase auth + sync
 - [ ] Recurring transaction auto-creation from subscriptions
-- [ ] PWA / offline install
+- [x] PWA / offline install
 - [x] Vercel deployment
