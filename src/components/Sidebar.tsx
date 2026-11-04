@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
   BarChart3, CalendarCheck, FolderTree, FileSpreadsheet, HandCoins, Home,
@@ -142,23 +142,51 @@ export function Sidebar() {
 
 export function MobileNav() {
   const isActive = useIsActive();
+  const pathname = usePathname();
+  const router = useRouter();
   const [moreOpen, setMoreOpen] = useState(false);
+  // the tab you just tapped — highlighted immediately, before the page has loaded
+  const [pending, setPending] = useState<string | null>(null);
   const moreItems = [MAIN[3], ...MORE];
   const moreActive = moreItems.some((n) => isActive([n.href]));
 
-  const tab = (item: (typeof MAIN)[number]) => (
-    <Link
-      key={item.href}
-      href={item.href}
+  useEffect(() => setPending(null), [pathname]);
+
+  // warm up every page so switching tabs doesn't wait on the network
+  useEffect(() => {
+    for (const item of [...MAIN, ...MORE]) router.prefetch(item.href);
+  }, [router]);
+
+  const on = (key: string, active: boolean) => (pending ? pending === key : active);
+
+  const bubble = (active: boolean, Icon: typeof Home) => (
+    <span
       className={cn(
-        "flex flex-1 flex-col items-center gap-1 py-1",
-        isActive(item.match) ? "text-accent" : "text-muted"
+        "flex h-8 w-14 items-center justify-center rounded-full transition-colors duration-150",
+        active ? "bg-accent/15 text-accent" : "text-muted"
       )}
     >
-      <item.icon size={20} />
-      <span className="text-[11px] font-medium">{item.label}</span>
-    </Link>
+      <Icon size={20} strokeWidth={active ? 2.4 : 2} />
+    </span>
   );
+
+  const tab = (item: (typeof MAIN)[number]) => {
+    const active = on(item.href, isActive(item.match));
+    return (
+      <Link
+        key={item.href}
+        href={item.href}
+        onClick={() => setPending(item.href)}
+        aria-current={active ? "page" : undefined}
+        className="flex flex-1 flex-col items-center gap-0.5 py-0.5 active:scale-95"
+      >
+        {bubble(active, item.icon)}
+        <span className={cn("text-[11px]", active ? "font-semibold text-accent" : "font-medium text-muted")}>{item.label}</span>
+      </Link>
+    );
+  };
+
+  const moreOn = on("more", moreActive);
 
   return (
     <>
@@ -177,11 +205,11 @@ export function MobileNav() {
         {tab(MAIN[2])}
         <button
           onClick={() => setMoreOpen(true)}
-          className={cn("flex flex-1 flex-col items-center gap-1 py-1", moreActive ? "text-accent" : "text-muted")}
+          className="flex flex-1 flex-col items-center gap-0.5 py-0.5 active:scale-95"
           aria-label="More pages"
         >
-          <LayoutGrid size={20} />
-          <span className="text-[11px] font-medium">More</span>
+          {bubble(moreOn, LayoutGrid)}
+          <span className={cn("text-[11px]", moreOn ? "font-semibold text-accent" : "font-medium text-muted")}>More</span>
         </button>
       </nav>
 
@@ -191,9 +219,12 @@ export function MobileNav() {
             <Link
               key={item.href}
               href={item.href}
-              onClick={() => setMoreOpen(false)}
+              onClick={() => {
+                setMoreOpen(false);
+                if (!isActive([item.href])) setPending("more");
+              }}
               className={cn(
-                "flex flex-col items-center gap-2 rounded-2xl border border-border px-2 py-4 text-center text-xs font-medium",
+                "flex flex-col items-center gap-2 rounded-2xl border border-border px-2 py-4 text-center text-xs font-medium active:scale-95",
                 isActive([item.href]) ? "border-accent bg-accent/10 text-accent" : "text-ink hover:bg-cardhover"
               )}
             >

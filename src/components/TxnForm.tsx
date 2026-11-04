@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Account, Category, Goal, Loan, PaymentMethod, Txn, TxnType } from "@/lib/types";
 import { toPaise } from "@/lib/money";
 import { todayDateInput } from "@/lib/dates";
@@ -8,6 +8,7 @@ import { Btn, Field, Input, Select, Textarea } from "./ui";
 import { format, parseISO } from "date-fns";
 import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { CategoryPicker } from "./CategoryPicker";
 
 // ─────────────────────────────────────────────────────────────
 // Shared transaction editor. Used by QuickAdd, Transactions page
@@ -63,6 +64,7 @@ export function TxnForm({
   const [notes, setNotes] = useState(initial?.notes ?? "");
   const [tagsStr, setTagsStr] = useState((initial?.tags ?? []).join(", "));
   const [error, setError] = useState<string | null>(null);
+  const [showMoreTypes, setShowMoreTypes] = useState(false);
   // optional fields stay folded away unless the transaction already uses them
   const [showDetails, setShowDetails] = useState(
     Boolean(initial?.merchant || initial?.notes || initial?.tags?.length || initial?.paymentMethodId)
@@ -98,9 +100,15 @@ export function TxnForm({
   }, [paymentMethodId, paymentMethods, accountId]);
 
   // reset destination whenever the type changes (valid options differ per type)
+  // when the user changes the type (not on first open — editing must keep its values)
+  const prevType = useRef(type);
   useEffect(() => {
+    if (prevType.current === type) return;
+    prevType.current = type;
     setToAccountId("");
-  }, [type]);
+    // a spending category doesn't apply to income (and vice versa)
+    setCategoryId((c) => (c && !categories.some((x) => x.id === c && x.kind === (type === "income" ? "income" : "expense")) ? "" : c));
+  }, [type, categories]);
 
   // clear destination if it points at the source account or is invalid for the type
   useEffect(() => {
@@ -169,21 +177,35 @@ export function TxnForm({
                 {t === "transfer" ? "Transfer" : TXN_TYPE_META[t].label}
               </button>
             ))}
-            <select
-              aria-label="Other transaction types"
-              value={isOtherType ? type : ""}
-              onChange={(e) => e.target.value && setType(e.target.value as TxnType)}
+            <button
+              type="button"
+              aria-expanded={showMoreTypes}
+              onClick={() => setShowMoreTypes((v) => !v)}
               className={cn(
-                "w-full min-w-0 cursor-pointer appearance-none rounded-lg bg-transparent px-1 py-2 text-center text-sm font-medium focus:outline-none",
-                isOtherType ? "bg-card text-ink shadow-card" : "text-muted"
+                "flex items-center justify-center gap-0.5 rounded-lg py-2 text-sm font-medium transition-colors",
+                isOtherType ? "bg-card text-ink shadow-card" : "text-muted hover:text-ink"
               )}
             >
-              <option value="">More ▾</option>
-              {(Object.keys(TXN_TYPE_META) as TxnType[]).filter((t) => !mainTypes.includes(t)).map((t) => (
-                <option key={t} value={t}>{TXN_TYPE_META[t].label}</option>
-              ))}
-            </select>
+              More <ChevronDown size={13} className={cn("transition-transform", showMoreTypes && "rotate-180")} />
+            </button>
           </div>
+          {(showMoreTypes || isOtherType) && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {(Object.keys(TXN_TYPE_META) as TxnType[]).filter((t) => !mainTypes.includes(t)).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setType(t)}
+                  className={cn(
+                    "rounded-full border px-3 py-1.5 text-xs transition-colors active:scale-95",
+                    type === t ? "border-accent bg-accent text-white" : "border-border bg-card text-ink hover:bg-cardhover"
+                  )}
+                >
+                  {TXN_TYPE_META[t].label}
+                </button>
+              ))}
+            </div>
+          )}
           {meta.help && <p className="mt-1.5 text-[11px] text-muted">{isOtherType && <b className="text-ink">{meta.label}: </b>}{meta.help}</p>}
         </div>
       )}
@@ -205,22 +227,14 @@ export function TxnForm({
         <Input placeholder={type === "income" ? "e.g. Salary" : "e.g. Dinner at Truffles"} value={description} onChange={(e) => setDescription(e.target.value)} />
       </Field>
 
+      {needsCategory && (
+        <div>
+          <span className="mb-1.5 block text-xs font-medium text-muted">Category</span>
+          <CategoryPicker key={type === "income" ? "income" : "expense"} categories={shownCats} value={categoryId} onChange={setCategoryId} />
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {needsCategory && (
-          <Field label="Category">
-            <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
-              <option value="">Uncategorised</option>
-              {shownCats.filter((c) => !c.parentId).map((c) => (
-                <optgroup key={c.id} label={c.name}>
-                  <option value={c.id}>{c.name} (general)</option>
-                  {shownCats.filter((s) => s.parentId === c.id).map((s) => (
-                    <option key={s.id} value={s.id}>{s.name}</option>
-                  ))}
-                </optgroup>
-              ))}
-            </Select>
-          </Field>
-        )}
         <Field label={type === "income" || type === "lend_repayment" || type === "borrow" || type === "refund" ? "Received into" : "Paid from"}>
           <Select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
             <option value="">Select account…</option>

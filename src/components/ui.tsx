@@ -1,8 +1,8 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { X } from "lucide-react";
-import { useEffect, type ReactNode } from "react";
+import { Check, ChevronDown, X } from "lucide-react";
+import { Children, Fragment, isValidElement, useEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
 
 // ── Card ──────────────────────────────────────────────────────
 
@@ -99,16 +99,169 @@ export function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
   );
 }
 
-export function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
+// ── Select ─────────────────────────────────────────────────────
+// Custom picker used everywhere instead of the browser's native dropdown, so it
+// looks the same on every phone and computer. Same API as <select>: pass
+// <option>/<optgroup> children; onChange receives { target: { value } }.
+
+interface PickOption { value: string; label: string; disabled?: boolean }
+interface PickGroup { label?: string; options: PickOption[] }
+
+function textOf(node: ReactNode): string {
+  if (node == null || typeof node === "boolean") return "";
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(textOf).join("");
+  if (isValidElement(node)) return textOf((node.props as { children?: ReactNode }).children);
+  return "";
+}
+
+function parseOptions(children: ReactNode): PickGroup[] {
+  const groups: PickGroup[] = [];
+  let loose: PickGroup | null = null;
+  const add = (el: ReactElement<{ value?: string | number; children?: ReactNode; disabled?: boolean }>, into: PickGroup) => {
+    const label = textOf(el.props.children);
+    into.options.push({ value: String(el.props.value ?? label), label, disabled: el.props.disabled });
+  };
+  Children.forEach(children, (child) => {
+    if (!isValidElement(child)) return;
+    if (child.type === "optgroup") {
+      loose = null;
+      const p = child.props as { label?: string; children?: ReactNode };
+      const g: PickGroup = { label: p.label, options: [] };
+      Children.forEach(p.children, (o) => isValidElement(o) && add(o as ReactElement<{ value?: string }>, g));
+      groups.push(g);
+    } else if (child.type === "option") {
+      if (!loose) { loose = { options: [] }; groups.push(loose); }
+      add(child as ReactElement<{ value?: string }>, loose);
+    } else if (child.type === Fragment) {
+      groups.push(...parseOptions((child.props as { children?: ReactNode }).children));
+    }
+  });
+  return groups;
+}
+
+export function Select({
+  value, onChange, children, className, disabled, "aria-label": ariaLabel, title,
+}: React.SelectHTMLAttributes<HTMLSelectElement>) {
+  const [open, setOpen] = useState(false);
+  // desktop panel position (fixed to the screen so pop-up forms can't clip it)
+  const [pos, setPos] = useState<{ left: number; width: number; top?: number; bottom?: number; maxH: number } | null>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const groups = parseOptions(children);
+  const all = groups.flatMap((g) => g.options);
+  const current = all.find((o) => o.value === String(value ?? ""));
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopImmediatePropagation(); // close just the picker, not the form around it
+      setOpen(false);
+    };
+    const place = () => {
+      const r = wrapRef.current?.getBoundingClientRect();
+      if (!r) return;
+      const below = window.innerHeight - r.bottom - 12;
+      const above = r.top - 12;
+      const width = Math.max(r.width, 192);
+      const left = Math.min(r.left, window.innerWidth - width - 8);
+      setPos(below >= 220 || below >= above
+        ? { left, width, top: r.bottom + 4, maxH: Math.min(288, below) }
+        : { left, width, bottom: window.innerHeight - r.top + 4, maxH: Math.min(288, above) });
+    };
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    const onDown = (e: MouseEvent) => {
+      if (window.innerWidth >= 640 && wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    window.addEventListener("keydown", onKey, true);
+    document.addEventListener("mousedown", onDown);
+    // bring the selected option into view
+    requestAnimationFrame(() => listRef.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" }));
+    return () => {
+      window.removeEventListener("keydown", onKey, true);
+      document.removeEventListener("mousedown", onDown);
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [open]);
+
+  const choose = (v: string) => {
+    setOpen(false);
+    if (v !== String(value ?? "")) onChange?.({ target: { value: v } } as React.ChangeEvent<HTMLSelectElement>);
+  };
+
   return (
-    <select
-      {...props}
-      className={cn(
-        "w-full rounded-xl border border-border bg-bg px-3 py-2 text-base text-ink sm:text-sm",
-        "focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20",
-        props.className
+    <div ref={wrapRef} className="relative">
+      <button
+        type="button"
+        disabled={disabled}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={ariaLabel}
+        title={title}
+        onClick={() => setOpen((o) => !o)}
+        className={cn(
+          "flex w-full items-center justify-between gap-2 rounded-xl border border-border bg-bg px-3 py-2 text-left text-base text-ink sm:text-sm",
+          "focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20 disabled:opacity-50",
+          open && "border-accent ring-2 ring-accent/20",
+          className
+        )}
+      >
+        <span className={cn("truncate", !current?.value && "text-muted")}>{current?.label ?? "Select…"}</span>
+        <ChevronDown size={16} className={cn("shrink-0 text-muted transition-transform", open && "rotate-180")} />
+      </button>
+
+      {open && (
+        <>
+          {/* phones: dim background + bottom sheet; computers: small panel under the field */}
+          <div className="fixed inset-0 z-[60] bg-black/30 sm:hidden" onClick={() => setOpen(false)} />
+          <div
+            ref={listRef}
+            role="listbox"
+            style={
+              pos && typeof window !== "undefined" && window.innerWidth >= 640
+                ? { left: pos.left, width: pos.width, top: pos.top, bottom: pos.bottom, maxHeight: pos.maxH }
+                : undefined
+            }
+            className={cn(
+              "fixed inset-x-0 bottom-0 z-[61] max-h-[70vh] overflow-y-auto rounded-t-2xl border border-border bg-card p-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-2xl",
+              "sm:inset-x-auto sm:bottom-auto sm:rounded-xl sm:pb-2 sm:shadow-lg"
+            )}
+          >
+            <div className="mx-auto mb-2 h-1 w-10 rounded-full bg-border sm:hidden" />
+            {groups.map((g, gi) => (
+              <div key={gi} className={cn(gi > 0 && "mt-1 border-t border-border pt-1")}>
+                {g.label && <p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wider text-faint">{g.label}</p>}
+                {g.options.filter((o) => !(o.value === "" && o.label.trim().endsWith("…"))).map((o) => {
+                  const selected = o.value === String(value ?? "");
+                  return (
+                    <button
+                      key={o.value + o.label}
+                      type="button"
+                      role="option"
+                      aria-selected={selected}
+                      disabled={o.disabled}
+                      onClick={() => choose(o.value)}
+                      className={cn(
+                        "flex w-full items-center justify-between gap-3 rounded-lg px-3 py-3 text-left text-[15px] sm:py-2 sm:text-sm",
+                        selected ? "bg-accent/10 font-semibold text-accent" : "text-ink hover:bg-cardhover",
+                        o.disabled && "opacity-40"
+                      )}
+                    >
+                      <span className="truncate">{o.label}</span>
+                      {selected && <Check size={16} className="shrink-0" />}
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </>
       )}
-    />
+    </div>
   );
 }
 

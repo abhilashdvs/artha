@@ -1,7 +1,7 @@
 "use client";
 
 import type { DatePreset, DateRange } from "@/lib/dates";
-import { Input } from "./ui";
+import { Input, Select } from "./ui";
 import { format, parseISO } from "date-fns";
 import { CalendarDays } from "lucide-react";
 
@@ -28,20 +28,19 @@ export function DateFilter({
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <label className="relative inline-flex items-center">
-        <CalendarDays size={15} className="pointer-events-none absolute left-3 text-muted" />
-        <select
+      <div className="relative w-44">
+        <CalendarDays size={15} className="pointer-events-none absolute left-3 top-1/2 z-[1] -translate-y-1/2 text-muted" />
+        <Select
           aria-label="Date range"
           value={preset}
           onChange={(e) => onChange(e.target.value as DatePreset)}
-          className="cursor-pointer appearance-none rounded-xl border border-border bg-card py-2 pl-9 pr-8 text-sm font-medium text-ink hover:bg-cardhover focus:border-accent focus:outline-none"
+          className="bg-card pl-9 font-medium"
         >
           {PRESETS.map((p) => (
             <option key={p.key} value={p.key}>{p.label}</option>
           ))}
-        </select>
-        <span className="pointer-events-none absolute right-3 text-xs text-muted">▾</span>
-      </label>
+        </Select>
+      </div>
       {preset === "custom" && (
         <div className="flex items-center gap-1.5">
           <Input
