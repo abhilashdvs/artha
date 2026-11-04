@@ -7,7 +7,9 @@ only. Do NOT wire up Supabase or deploy unless the user explicitly asks.
 ## Commands
 
 - `npm run dev` — dev server (localhost:3000)
-- `npm run build` — production build (must stay clean)
+- `npm run build` — production build (must stay clean). **Never run while `next dev` is
+  running** — it clobbers `.next` and the dev server starts 404ing all JS/CSS chunks
+  (blank page). Stop dev first, or use `npx tsc --noEmit` for quick verification instead.
 - `npx tsc --noEmit` — type check (must stay clean)
 
 ## Architecture
