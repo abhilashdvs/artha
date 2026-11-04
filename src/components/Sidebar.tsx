@@ -5,12 +5,12 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
   BarChart3, CalendarClock, CreditCard, FolderTree, HandCoins, Home,
-  ListOrdered, Moon, PiggyBank, ReceiptText, Sun, Target, Wallet, Zap,
+  ListOrdered, Menu, Moon, PiggyBank, ReceiptText, Sun, Target, Wallet, Zap,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
 import { useDemoMode } from "@/lib/hooks";
-import { DemoBadge } from "./ui";
+import { DemoBadge, Modal } from "./ui";
 
 const NAV = [
   { href: "/", label: "Dashboard", icon: Home },
@@ -90,22 +90,62 @@ export function Sidebar() {
 
 export function MobileNav() {
   const pathname = usePathname();
-  const items = [NAV[0], NAV[1], NAV[2], NAV[5], NAV[6]];
+  const demo = useDemoMode();
+  const [moreOpen, setMoreOpen] = useState(false);
+  const primary = [NAV[0], NAV[1], NAV[2], NAV[5]]; // Dashboard, Transactions, Accounts, Analytics
+  const secondary = NAV.filter((n) => !primary.includes(n)); // everything else, in NAV order
+  const isActive = (href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(href));
+  const moreActive = secondary.some((n) => isActive(n.href));
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-40 flex items-center justify-around border-t border-border bg-card py-2 lg:hidden">
-      {items.map((item) => {
-        const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
-        return (
+    <>
+      <nav className="fixed inset-x-0 bottom-0 z-40 flex items-center justify-around border-t border-border bg-card pb-[env(safe-area-inset-bottom)] pt-2 lg:hidden">
+        {primary.map((item) => (
           <Link
             key={item.href}
             href={item.href}
-            className={cn("flex flex-col items-center gap-0.5 px-2", active ? "text-accent" : "text-muted")}
+            className={cn("flex flex-col items-center gap-0.5 px-2 py-0.5", isActive(item.href) ? "text-accent" : "text-muted")}
           >
             <item.icon size={18} />
             <span className="text-[9px] font-medium">{item.label.split(" ")[0]}</span>
           </Link>
-        );
-      })}
-    </nav>
+        ))}
+        <button
+          onClick={() => setMoreOpen(true)}
+          className={cn("flex flex-col items-center gap-0.5 px-2 py-0.5", moreActive ? "text-accent" : "text-muted")}
+          aria-label="More pages"
+        >
+          <Menu size={18} />
+          <span className="text-[9px] font-medium">More</span>
+        </button>
+      </nav>
+      <Modal open={moreOpen} onClose={() => setMoreOpen(false)} title="More">
+        {demo && (
+          <div className="mb-3 flex items-center justify-between rounded-xl border border-warn/30 bg-warn/10 px-3 py-2">
+            <span className="text-[11px] font-medium text-warn">Viewing demo data</span>
+            <DemoBadge />
+          </div>
+        )}
+        <div className="space-y-0.5">
+          {secondary.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              onClick={() => setMoreOpen(false)}
+              className={cn(
+                "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
+                isActive(item.href) ? "bg-accent/10 text-accent" : "text-muted hover:bg-cardhover hover:text-ink"
+              )}
+            >
+              <item.icon size={17} />
+              {item.label}
+            </Link>
+          ))}
+          <div className="flex items-center justify-between px-3 pt-3">
+            <span className="text-xs text-faint">Theme</span>
+            <ThemeToggle />
+          </div>
+        </div>
+      </Modal>
+    </>
   );
 }

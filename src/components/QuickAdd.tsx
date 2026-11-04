@@ -37,7 +37,7 @@ export function QuickAdd() {
     <>
       <button
         onClick={() => setOpen(true)}
-        className="fixed bottom-20 right-5 z-40 flex h-13 items-center gap-2 rounded-full bg-accent px-5 py-3.5 text-sm font-semibold text-white shadow-lg shadow-accent/30 transition-transform hover:scale-105 lg:bottom-8"
+        className="fixed bottom-20 right-5 z-40 flex items-center gap-2 rounded-full bg-accent px-5 py-3.5 text-sm font-semibold text-white shadow-lg shadow-accent/30 transition-transform hover:scale-105 lg:bottom-8"
         aria-label="Quick add transaction"
       >
         <Plus size={18} />
@@ -46,7 +46,7 @@ export function QuickAdd() {
       <Modal open={open} onClose={() => setOpen(false)} title="Add transaction" wide>
         {ready ? (
           <>
-            <p className="mb-3 flex items-center gap-1.5 text-[11px] text-faint">
+            <p className="mb-3 hidden items-center gap-1.5 text-[11px] text-faint sm:flex">
               <Zap size={12} /> Tip: press <kbd className="rounded border border-border px-1">N</kbd> anywhere to open this.
             </p>
             <TxnForm

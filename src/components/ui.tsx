@@ -85,12 +85,13 @@ export function Field({ label, children, hint }: { label: string; children: Reac
   );
 }
 
+// text-base (16px) on mobile prevents iOS Safari auto-zoom on focus; sm:text-sm restores desktop density.
 export function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
   return (
     <input
       {...props}
       className={cn(
-        "w-full rounded-xl border border-border bg-bg px-3 py-2 text-sm text-ink placeholder:text-faint",
+        "w-full rounded-xl border border-border bg-bg px-3 py-2 text-base text-ink placeholder:text-faint sm:text-sm",
         "focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20",
         props.className
       )}
@@ -103,7 +104,7 @@ export function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
     <select
       {...props}
       className={cn(
-        "w-full rounded-xl border border-border bg-bg px-3 py-2 text-sm text-ink",
+        "w-full rounded-xl border border-border bg-bg px-3 py-2 text-base text-ink sm:text-sm",
         "focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20",
         props.className
       )}
@@ -116,7 +117,7 @@ export function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement
     <textarea
       {...props}
       className={cn(
-        "w-full rounded-xl border border-border bg-bg px-3 py-2 text-sm text-ink placeholder:text-faint",
+        "w-full rounded-xl border border-border bg-bg px-3 py-2 text-base text-ink placeholder:text-faint sm:text-sm",
         "focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20",
         props.className
       )}

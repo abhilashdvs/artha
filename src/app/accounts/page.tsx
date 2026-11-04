@@ -50,18 +50,18 @@ export default function AccountsPage() {
         <Btn size="sm" onClick={() => setAcctModal("new")}><Plus size={14} /> Add account</Btn>
       </div>
 
-      <div className="grid grid-cols-3 gap-3">
-        <div className="rounded-2xl border border-border bg-card p-4">
-          <p className="text-xs text-muted">Bank + Cash + Wallets</p>
-          <p className={cn("tnum mt-1 text-lg font-bold", derived.bankCash >= 0 ? "text-ink" : "text-danger")}>{formatINR(derived.bankCash)}</p>
+      <div className="grid grid-cols-3 gap-2 sm:gap-3">
+        <div className="rounded-2xl border border-border bg-card p-3 sm:p-4">
+          <p className="text-[11px] text-muted sm:text-xs">Bank + Cash + Wallets</p>
+          <p className={cn("tnum mt-1 truncate text-base font-bold sm:text-lg", derived.bankCash >= 0 ? "text-ink" : "text-danger")} title={formatINR(derived.bankCash)}>{formatINR(derived.bankCash)}</p>
         </div>
-        <div className="rounded-2xl border border-border bg-card p-4">
-          <p className="text-xs text-muted">Cash in hand</p>
-          <p className="tnum mt-1 text-lg font-bold text-ink">{formatINR(derived.cashTotal)}</p>
+        <div className="rounded-2xl border border-border bg-card p-3 sm:p-4">
+          <p className="text-[11px] text-muted sm:text-xs">Cash in hand</p>
+          <p className="tnum mt-1 truncate text-base font-bold text-ink sm:text-lg" title={formatINR(derived.cashTotal)}>{formatINR(derived.cashTotal)}</p>
         </div>
-        <div className="rounded-2xl border border-border bg-card p-4">
-          <p className="text-xs text-muted">Credit card outstanding</p>
-          <p className={cn("tnum mt-1 text-lg font-bold", derived.ccOut > 0 ? "text-danger" : "text-good")}>{formatINR(derived.ccOut)}</p>
+        <div className="rounded-2xl border border-border bg-card p-3 sm:p-4">
+          <p className="text-[11px] text-muted sm:text-xs">Credit card outstanding</p>
+          <p className={cn("tnum mt-1 truncate text-base font-bold sm:text-lg", derived.ccOut > 0 ? "text-danger" : "text-good")} title={formatINR(derived.ccOut)}>{formatINR(derived.ccOut)}</p>
         </div>
       </div>
 

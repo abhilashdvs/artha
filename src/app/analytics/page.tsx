@@ -65,18 +65,18 @@ export default function AnalyticsPage() {
       </div>
 
       {/* averages */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-3 gap-2 sm:gap-3">
         {(["daily", "weekly", "monthly"] as const).map((k) => (
           <button
             key={k}
             onClick={() => setView(k)}
             className={cn(
-              "rounded-2xl border p-4 text-left transition-colors",
+              "rounded-2xl border p-3 text-left transition-colors sm:p-4",
               view === k ? "border-accent bg-accent/5" : "border-border bg-card hover:bg-cardhover"
             )}
           >
-            <p className="text-xs text-muted">Avg spend / {k === "daily" ? "day" : k === "weekly" ? "week" : "month"}</p>
-            <p className="tnum mt-1 text-lg font-bold">{formatINR(avgMap[k])}</p>
+            <p className="text-[11px] text-muted sm:text-xs">Avg spend / {k === "daily" ? "day" : k === "weekly" ? "week" : "month"}</p>
+            <p className="tnum mt-1 truncate text-base font-bold sm:text-lg" title={formatINR(avgMap[k])}>{formatINR(avgMap[k])}</p>
             <p className="text-[10px] text-faint">based on {avgs.daysWithSpend} active days</p>
           </button>
         ))}
