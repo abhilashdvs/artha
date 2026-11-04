@@ -1,8 +1,9 @@
 // Artha service worker — lets the installed app open without internet.
-// Pages: network first, fall back to the last cached copy when offline.
+// Pages: open instantly from the saved copy, and refresh that copy in the background
+// (network is only waited on the very first visit to a page).
 // Build assets (/_next/static, icons): cache first — their names change on every deploy.
 // Supabase / other origins are never cached (your data sync always goes to the network).
-const CACHE = "artha-v2"; // bump to refresh cached icons/pages
+const CACHE = "artha-v3"; // bump to refresh cached icons/pages
 const SHELL = ["/", "/transactions", "/plan", "/lending", "/settings", "/manifest.webmanifest", "/icons/icon-192.png"];
 
 self.addEventListener("install", (event) => {
@@ -41,14 +42,24 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (req.mode === "navigate") {
-    event.respondWith(
-      fetch(req)
-        .then((res) => {
+    const key = url.pathname;
+    const network = fetch(req)
+      .then((res) => {
+        if (res.ok) {
           const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put(url.pathname, copy));
-          return res;
-        })
-        .catch(() => caches.match(url.pathname).then((hit) => hit || caches.match("/")))
+          caches.open(CACHE).then((c) => c.put(key, copy));
+        }
+        return res;
+      })
+      .catch(() => null);
+    event.respondWith(
+      caches.match(key).then((hit) => {
+        if (hit) {
+          event.waitUntil(network); // refresh in the background
+          return hit;
+        }
+        return network.then((res) => res || caches.match("/") || Response.error());
+      })
     );
   }
 });

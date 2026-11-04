@@ -169,3 +169,24 @@ begin
     execute format('grant select, insert, update, delete on public.%I to authenticated', t);
   end loop;
 end $$;
+
+-- ── updated_at is always set by the server clock (incremental sync relies on it) ──
+create or replace function public.artha_touch_updated_at() returns trigger
+language plpgsql set search_path = '' as $$
+begin
+  new.updated_at := now();
+  return new;
+end $$;
+
+do $$
+declare t text;
+begin
+  foreach t in array array['accounts','payment_methods','categories','transactions',
+                           'loans','budgets','subscriptions','goals','settings']
+  loop
+    execute format('drop trigger if exists touch_updated_at on public.%I', t);
+    execute format('create trigger touch_updated_at before insert or update on public.%I
+                    for each row execute function public.artha_touch_updated_at()', t);
+    execute format('create index if not exists %I on public.%I (user_id, updated_at)', t || '_user_updated_idx', t);
+  end loop;
+end $$;

@@ -1,6 +1,6 @@
 "use client";
 
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { createClient, isAuthRetryableFetchError, type SupabaseClient } from "@supabase/supabase-js";
 import type { Table, Transaction } from "dexie";
 import { useSyncExternalStore } from "react";
 import { db, seedDefaults } from "./db";
@@ -18,15 +18,15 @@ import { db, seedDefaults } from "./db";
 // Demo rows and the demoMode flag never leave the device.
 // ─────────────────────────────────────────────────────────────
 
-const URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-export const syncConfigured = Boolean(URL && KEY);
+export const syncConfigured = Boolean(SB_URL && KEY);
 
 let client: SupabaseClient | null = null;
 export function supabase(): SupabaseClient | null {
   if (!syncConfigured || typeof window === "undefined") return null;
   if (!client) {
-    client = createClient(URL!, KEY!, {
+    client = createClient(SB_URL!, KEY!, {
       auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
     });
   }
@@ -123,14 +123,31 @@ export interface SyncStatus {
   authReady: boolean;
 }
 
+/** The login supabase-js saved in this browser (read synchronously so the app can open instantly). */
+function storedSession(): { id: string; email: string | null } | null {
+  if (!syncConfigured || typeof window === "undefined") return null;
+  try {
+    const ref = new URL(SB_URL!).host.split(".")[0];
+    const raw = localStorage.getItem(`sb-${ref}-auth-token`);
+    if (!raw) return null;
+    const j = JSON.parse(raw);
+    const u = j?.user ?? j?.currentSession?.user;
+    return j?.refresh_token && u?.id ? { id: u.id, email: u.email ?? null } : null;
+  } catch {
+    return null;
+  }
+}
+const remembered = storedSession();
+
 let status: SyncStatus = {
   configured: syncConfigured,
-  email: null,
+  // a saved login opens the app straight away; we verify it in the background
+  email: remembered?.email ?? null,
   state: "off",
   lastSynced: null,
   error: null,
   recovering: false,
-  authReady: !syncConfigured,
+  authReady: !syncConfigured || remembered !== null,
 };
 const listeners = new Set<() => void>();
 function setStatus(patch: Partial<SyncStatus>) {
@@ -295,37 +312,74 @@ async function upsertResilient(c: SupabaseClient, remote: string, rows: Row[], r
 
 // ── Pull ─────────────────────────────────────────────────────
 
-async function fetchAll(c: SupabaseClient, remote: string): Promise<Row[]> {
+const CURSOR_KEY = "artha:sync:cursor";
+/** Re-read a few minutes before the last change we saw, so nothing committed late is missed. */
+const OVERLAP_MS = 5 * 60_000;
+
+function readCursors(): Record<string, string> {
+  try { return JSON.parse(localStorage.getItem(CURSOR_KEY) || "{}"); } catch { return {}; }
+}
+function writeCursors(c: Record<string, string> | null) {
+  try {
+    if (c) localStorage.setItem(CURSOR_KEY, JSON.stringify(c));
+    else localStorage.removeItem(CURSOR_KEY);
+  } catch { /* ignore */ }
+}
+
+async function fetchPaged(
+  c: SupabaseClient, remote: string, columns: string, since?: string,
+): Promise<Row[]> {
   const out: Row[] = [];
   for (let from = 0; ; from += 1000) {
-    const { data, error } = await c.from(remote).select("*").order(remote === "settings" ? "key" : "id").range(from, from + 999);
+    let q = c.from(remote).select(columns);
+    if (since) q = q.gte("updated_at", since);
+    const { data, error } = await q.order(remote === "settings" ? "key" : "id").range(from, from + 999);
     if (error) throw error;
-    out.push(...(data ?? []));
+    out.push(...((data ?? []) as unknown as Row[]));
     if (!data || data.length < 1000) break;
   }
   return out;
 }
 
+/**
+ * Pull the cloud copy. After the first full download, only rows changed since
+ * the last sync are downloaded, plus the list of ids (to notice deletions) —
+ * a few KB instead of your whole history on every open.
+ */
 async function pull(): Promise<void> {
   const c = supabase();
   if (!c || !userId) return;
-  const remote: Partial<Record<LocalTable, Row[]>> = {};
-  for (const t of LOCAL_TABLES) remote[t] = await fetchAll(c, TABLES[t].remote);
-  const settings = await fetchAll(c, "settings");
+  const cursors = readCursors();
+  const next: Record<string, string> = { ...cursors };
+  const changed: Partial<Record<LocalTable, Row[]>> = {};
+  const ids: Partial<Record<LocalTable, Set<string>>> = {};
+  for (const t of LOCAL_TABLES) {
+    const remote = TABLES[t].remote;
+    const since = cursors[t] ? new Date(Date.parse(cursors[t]) - OVERLAP_MS).toISOString() : undefined;
+    changed[t] = await fetchPaged(c, remote, "*", since);
+    ids[t] = since
+      ? new Set((await fetchPaged(c, remote, "id")).map((r) => r.id as string))
+      : new Set(changed[t]!.map((r) => r.id as string));
+    const newest = changed[t]!.reduce((m, r) => (r.updated_at > m ? r.updated_at : m), cursors[t] ?? "");
+    if (newest) next[t] = newest;
+  }
+  const settings = await fetchPaged(c, "settings", "*");
 
   applyingRemote = true;
   try {
     await db.transaction("rw", [...LOCAL_TABLES.map(table), db.settings], async () => {
       for (const t of LOCAL_TABLES) {
         const localReal = await table(t).filter((r) => !r.isDemo).primaryKeys();
-        await table(t).bulkDelete(localReal);
-        await table(t).bulkPut(remote[t]!.map((r) => toLocal(t, r)));
+        const gone = localReal.filter((id) => !ids[t]!.has(String(id)));
+        if (gone.length) await table(t).bulkDelete(gone);
+        if (changed[t]!.length) await table(t).bulkPut(changed[t]!.map((r) => toLocal(t, r)));
       }
       for (const s of settings) await db.settings.put({ key: s.key, value: s.value });
     });
   } finally {
     applyingRemote = false;
   }
+  writeCursors(next);
   try {
     for (const s of settings) localStorage.setItem("artha:setting:" + s.key, JSON.stringify(s.value));
   } catch { /* ignore */ }
@@ -425,19 +479,34 @@ export async function initSync(): Promise<boolean> {
     void syncNow();
   };
   window.addEventListener("focus", refresh);
+  // iPhone home-screen apps don't always fire "focus" when reopened
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") refresh(); });
   window.addEventListener("online", () => { lastPull = 0; refresh(); });
   setInterval(() => { if (userId) void flush(); }, 60_000);
 
-  const { data } = await c.auth.getSession().catch(() => ({ data: { session: null } }));
+  // If there's a saved login, start syncing with it right away — the app is already showing.
+  if (remembered && remembered.id !== userId) {
+    lastPull = Date.now();
+    void link(remembered.id, remembered.email);
+  }
+
+  const { data, error } = await c.auth.getSession().catch((e) => ({ data: { session: null }, error: e }));
   const s = data.session;
   if (s) {
-    lastPull = Date.now();
-    // set the email before marking auth ready so the app (not the sign-in screen) renders first
     setStatus({ email: s.user.email ?? null });
-    if (s.user.id !== userId) void link(s.user.id, s.user.email ?? null);
+    if (s.user.id !== userId) {
+      lastPull = Date.now();
+      void link(s.user.id, s.user.email ?? null);
+    }
+  } else if (remembered && isAuthRetryableFetchError(error)) {
+    // offline / flaky network: keep you signed in; sync resumes when you're back online
+  } else if (remembered) {
+    // the saved login is no longer valid (e.g. signed out elsewhere) → show sign-in
+    userId = null;
+    setStatus({ email: null, state: "off" });
   }
   setStatus({ authReady: true });
-  return Boolean(s);
+  return Boolean(s) || Boolean(remembered && isAuthRetryableFetchError(error));
 }
 
 // ── Auth actions (used by the Account card) ──────────────────
@@ -487,18 +556,21 @@ export async function signOut(): Promise<void> {
   if (readOutbox().length > 0) {
     throw new Error("Some changes haven't been saved to the cloud yet. Check your connection, tap Sync now, then sign out.");
   }
-  await c.auth.signOut();
+  // "local": sign out this device only — your other devices stay signed in
+  await c.auth.signOut({ scope: "local" });
   userId = null;
   await clearLocalAccountData();
   try {
     localStorage.removeItem(LINKED_KEY);
     localStorage.removeItem(OUTBOX_KEY);
   } catch { /* ignore */ }
+  writeCursors(null);
   setStatus({ email: null, state: "off", lastSynced: null, error: null });
 }
 
 /** Remove synced (non-demo) rows and synced settings from this browser. */
 async function clearLocalAccountData(): Promise<void> {
+  writeCursors(null);
   applyingRemote = true;
   try {
     await db.transaction("rw", [...LOCAL_TABLES.map(table), db.settings], async () => {
@@ -519,6 +591,7 @@ export async function wipeCloud(): Promise<void> {
   const c = supabase();
   if (!c || !userId) return;
   writeOutbox([]);
+  writeCursors(null);
   for (const t of [...LOCAL_TABLES.map((t) => TABLES[t].remote), "settings"]) {
     const { error } = await c.from(t).delete().eq("user_id", userId);
     if (error) throw error;

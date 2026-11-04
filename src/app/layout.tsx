@@ -6,6 +6,7 @@ import { MobileNav, Sidebar } from "@/components/Sidebar";
 import { QuickAdd } from "@/components/QuickAdd";
 import { DbInit } from "@/components/DbInit";
 import { AuthGate } from "@/components/AuthGate";
+import { BackBar } from "@/components/BackBar";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
@@ -45,7 +46,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <Sidebar />
             {/* pb-28 on mobile clears the bottom tab bar; the sidebar is w-56 on desktop */}
             <main className="pb-28 lg:pb-10 lg:pl-56">
-              <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">{children}</div>
+              <div className="mx-auto max-w-7xl px-4 py-6 pt-[max(1.5rem,env(safe-area-inset-top))] sm:px-6">
+                <BackBar />
+                {children}
+              </div>
             </main>
             <MobileNav />
             <QuickAdd />
