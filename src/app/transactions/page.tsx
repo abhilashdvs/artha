@@ -1,0 +1,341 @@
+"use client";
+
+import { Suspense, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import {
+  useAccounts, useCategories, useGoals, useLoans, usePaymentMethods, useTxns,
+} from "@/lib/hooks";
+import { filterByRange, fmtDay, monthKeyOf, rangeForPreset, type DatePreset, type DateRange } from "@/lib/dates";
+import { formatINR } from "@/lib/money";
+import { addTxn, deleteTxn, updateTxn } from "@/lib/db";
+import { exportTxnsCsv, parseCsvFile, previewImport, runImport, type ImportPlan } from "@/lib/csv";
+import { Card, CardTitle, Btn, Empty, Input, Modal, Select, Badge } from "@/components/ui";
+import { DateFilter } from "@/components/DateFilter";
+import { TxnForm } from "@/components/TxnForm";
+import { cn, downloadFile } from "@/lib/utils";
+import { ArrowDownUp, Download, Pencil, Search, Trash2, Upload } from "lucide-react";
+import { startOfMonth, format } from "date-fns";
+import type { Txn, TxnType } from "@/lib/types";
+
+const TYPE_LABEL: Record<TxnType, string> = {
+  expense: "Expense", income: "Income", transfer: "Transfer", cc_payment: "CC Payment",
+  lend: "Lend", lend_repayment: "Lend Repay", borrow: "Borrow", borrow_repayment: "Borrow Repay",
+  refund: "Refund", investment: "Investment",
+};
+
+function TransactionsInner() {
+  const params = useSearchParams();
+  const accounts = useAccounts();
+  const categories = useCategories();
+  const paymentMethods = usePaymentMethods();
+  const loans = useLoans();
+  const goals = useGoals();
+  const txns = useTxns();
+
+  const [preset, setPreset] = useState<DatePreset>("month");
+  const [custom, setCustom] = useState<DateRange>({ start: startOfMonth(new Date()), end: new Date() });
+  const [q, setQ] = useState("");
+  const [typeFilter, setTypeFilter] = useState<string>("all");
+  const [catFilter, setCatFilter] = useState<string>("all");
+  const [acctFilter, setAcctFilter] = useState<string>("all");
+  const [sortDesc, setSortDesc] = useState(true);
+  const [editTxn, setEditTxn] = useState<Txn | null>(null);
+  const [delTxn, setDelTxn] = useState<Txn | null>(null);
+  const [importOpen, setImportOpen] = useState(params.get("import") === "1");
+
+  const range = useMemo(() => rangeForPreset(preset, custom), [preset, custom]);
+
+  const filtered = useMemo(() => {
+    if (!txns) return [];
+    let list = filterByRange(txns, range);
+    if (typeFilter !== "all") list = list.filter((t) => t.type === typeFilter);
+    if (catFilter !== "all") list = list.filter((t) => t.categoryId === catFilter);
+    if (acctFilter !== "all") list = list.filter((t) => t.accountId === acctFilter || t.toAccountId === acctFilter);
+    if (q.trim()) {
+      const needle = q.trim().toLowerCase();
+      list = list.filter((t) =>
+        [t.description, t.merchant ?? "", t.notes ?? "", (t.tags ?? []).join(" ")]
+          .join(" ")
+          .toLowerCase()
+          .includes(needle)
+      );
+    }
+    list.sort((a, b) => (sortDesc ? b.date.localeCompare(a.date) : a.date.localeCompare(b.date)));
+    return list;
+  }, [txns, range, typeFilter, catFilter, acctFilter, q, sortDesc]);
+
+  const grouped = useMemo(() => {
+    const map = new Map<string, Txn[]>();
+    for (const t of filtered) {
+      const key = t.date.slice(0, 10);
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(t);
+    }
+    return [...map.entries()];
+  }, [filtered]);
+
+  const totals = useMemo(() => {
+    const exp = filtered.filter((t) => t.type === "expense").reduce((s, t) => s + t.amount, 0);
+    const refunds = filtered.filter((t) => t.type === "refund").reduce((s, t) => s + t.amount, 0);
+    const inc = filtered.filter((t) => t.type === "income").reduce((s, t) => s + t.amount, 0);
+    const inv = filtered.filter((t) => t.type === "investment").reduce((s, t) => s + t.amount, 0);
+    return { exp, refunds, inc, inv, net: exp - refunds };
+  }, [filtered]);
+
+  if (!txns || !accounts || !categories || !paymentMethods) {
+    return <div className="py-20 text-center text-sm text-muted">Loading…</div>;
+  }
+
+  const acctName = (id?: string) => accounts.find((a) => a.id === id)?.name ?? "—";
+  const catName = (id?: string) => (id ? categories.find((c) => c.id === id)?.name : undefined);
+  const pmName = (id?: string) => (id ? paymentMethods.find((p) => p.id === id)?.name : undefined);
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Transactions</h1>
+          <p className="text-sm text-muted">{filtered.length} entries in range</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Btn variant="outline" size="sm" onClick={async () => downloadFile(`artha-transactions-${format(new Date(), "yyyy-MM-dd")}.csv`, await exportTxnsCsv(filtered))}>
+            <Download size={13} /> Export CSV
+          </Btn>
+          <Btn variant="outline" size="sm" onClick={() => setImportOpen(true)}>
+            <Upload size={13} /> Import
+          </Btn>
+        </div>
+      </div>
+
+      <DateFilter preset={preset} onChange={setPreset} custom={custom} onCustomChange={setCustom} />
+
+      {/* filter bar */}
+      <Card className="!p-3">
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="relative lg:col-span-2">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-faint" />
+            <Input className="pl-8" placeholder="Search description, merchant, tag…" value={q} onChange={(e) => setQ(e.target.value)} />
+          </div>
+          <Select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
+            <option value="all">All types</option>
+            {Object.entries(TYPE_LABEL).map(([k, v]) => (
+              <option key={k} value={k}>{v}</option>
+            ))}
+          </Select>
+          <Select value={catFilter} onChange={(e) => setCatFilter(e.target.value)}>
+            <option value="all">All categories</option>
+            {categories.filter((c) => !c.isArchived).map((c) => (
+              <option key={c.id} value={c.id}>{c.parentId ? "— " : ""}{c.name}</option>
+            ))}
+          </Select>
+          <Select value={acctFilter} onChange={(e) => setAcctFilter(e.target.value)}>
+            <option value="all">All accounts</option>
+            {accounts.filter((a) => a.isActive).map((a) => (
+              <option key={a.id} value={a.id}>{a.name}</option>
+            ))}
+          </Select>
+        </div>
+      </Card>
+
+      {/* totals strip */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+        {[
+          ["Income", totals.inc, "text-good"],
+          ["Spent (gross)", totals.exp, "text-danger"],
+          ["Refunds", totals.refunds, "text-good"],
+          ["Net spend", totals.net, "text-ink"],
+          ["Invested", totals.inv, "text-accent"],
+        ].map(([label, val, cls]) => (
+          <div key={label as string} className="rounded-xl border border-border bg-card px-3 py-2.5">
+            <p className="text-[11px] text-muted">{label}</p>
+            <p className={cn("tnum text-sm font-bold", cls as string)}>{formatINR(val as number)}</p>
+          </div>
+        ))}
+      </div>
+
+      {filtered.length === 0 ? (
+        <Empty
+          title="No transactions found"
+          sub="Add transactions with the + button, import a CSV, or widen the filters."
+          action={<Btn variant="outline" size="sm" onClick={() => setImportOpen(true)}><Upload size={13} /> Import CSV</Btn>}
+        />
+      ) : (
+        <Card className="!p-0 overflow-hidden">
+          <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
+            <span className="text-xs font-medium text-muted">Entries</span>
+            <button
+              onClick={() => setSortDesc((v) => !v)}
+              className="flex items-center gap-1 text-xs font-medium text-muted hover:text-ink"
+            >
+              <ArrowDownUp size={12} /> {sortDesc ? "Newest first" : "Oldest first"}
+            </button>
+          </div>
+          <div className="max-h-[65vh] overflow-y-auto">
+            {grouped.map(([day, list]) => (
+              <div key={day}>
+                <p className="sticky top-0 z-10 border-b border-border bg-card px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-faint">
+                  {fmtDay(list[0].date)}
+                </p>
+                <ul className="divide-y divide-border">
+                  {list.map((t) => {
+                    const isOut = ["expense", "lend", "borrow_repayment", "investment"].includes(t.type);
+                    const isIn = ["income", "lend_repayment", "borrow", "refund"].includes(t.type);
+                    return (
+                      <li key={t.id} className="group flex items-center gap-3 px-4 py-2.5 hover:bg-cardhover">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <p className="truncate text-sm font-medium text-ink">{t.description}</p>
+                            {t.type !== "expense" && t.type !== "income" && (
+                              <Badge tone={t.type === "refund" ? "good" : t.type === "investment" ? "accent" : "default"}>
+                                {TYPE_LABEL[t.type]}
+                              </Badge>
+                            )}
+                            {t.isDemo && <Badge tone="warn">demo</Badge>}
+                          </div>
+                          <p className="mt-0.5 truncate text-xs text-muted">
+                            {acctName(t.accountId)}
+                            {t.toAccountId ? ` → ${acctName(t.toAccountId)}` : ""}
+                            {pmName(t.paymentMethodId) ? ` · ${pmName(t.paymentMethodId)}` : ""}
+                            {catName(t.categoryId) ? ` · ${catName(t.categoryId)}` : ""}
+                            {t.merchant ? ` · ${t.merchant}` : ""}
+                          </p>
+                        </div>
+                        <span className={cn("tnum text-sm font-semibold", isOut ? "text-danger" : isIn ? "text-good" : "text-ink")}>
+                          {isOut ? "−" : isIn ? "+" : ""}{formatINR(t.amount)}
+                        </span>
+                        <div className="hidden gap-1 group-hover:flex">
+                          <button onClick={() => setEditTxn(t)} className="rounded-lg p-1.5 text-muted hover:bg-bg hover:text-ink">
+                            <Pencil size={13} />
+                          </button>
+                          <button onClick={() => setDelTxn(t)} className="rounded-lg p-1.5 text-muted hover:bg-danger/10 hover:text-danger">
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {/* edit modal */}
+      <Modal open={!!editTxn} onClose={() => setEditTxn(null)} title="Edit transaction" wide>
+        {editTxn && (
+          <TxnForm
+            accounts={accounts}
+            categories={categories}
+            paymentMethods={paymentMethods}
+            loans={loans ?? []}
+            goals={goals ?? []}
+            initial={editTxn}
+            submitLabel="Save changes"
+            onSubmit={async (values) => {
+              await updateTxn(editTxn.id, values);
+              setEditTxn(null);
+            }}
+            onCancel={() => setEditTxn(null)}
+          />
+        )}
+      </Modal>
+
+      {/* delete confirm */}
+      <Modal open={!!delTxn} onClose={() => setDelTxn(null)} title="Delete transaction?">
+        {delTxn && (
+          <div className="space-y-4">
+            <p className="text-sm text-muted">
+              Delete <b className="text-ink">{delTxn.description}</b> ({formatINR(delTxn.amount)})? This cannot be undone.
+            </p>
+            <div className="flex justify-end gap-2">
+              <Btn variant="ghost" onClick={() => setDelTxn(null)}>Cancel</Btn>
+              <Btn variant="danger" onClick={async () => { await deleteTxn(delTxn.id); setDelTxn(null); }}>
+                Delete
+              </Btn>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <ImportModal open={importOpen} onClose={() => setImportOpen(false)} />
+    </div>
+  );
+}
+
+// ── CSV import wizard ─────────────────────────────────────────
+
+function ImportModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const accounts = useAccounts();
+  const categories = useCategories();
+  const txns = useTxns();
+  const [accountId, setAccountId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<{ inserted: number; dupes: number; total: number } | null>(null);
+
+  async function handleFile(file: File) {
+    if (!accountId) return setError("Choose the account these transactions belong to first.");
+    setBusy(true);
+    setError(null);
+    try {
+      const rows = await parseCsvFile(file);
+      if (rows.length === 0) return setError("Could not find any valid rows. Check the column format.");
+      const plan: ImportPlan = {
+        accountId,
+        kind: file.name.endsWith(".csv") ? "generic" : "generic",
+        dateCol: "auto", descCol: "auto", amountCol: "auto", typeCol: "auto", categoryCol: "auto",
+      };
+      const items = previewImport(rows, plan, categories ?? []);
+      const res = await runImport(items, plan, txns ?? [], categories ?? []);
+      setResult({ ...res, total: rows.length });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Import failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title="Import CSV / Excel">
+      <div className="space-y-4">
+        <div className="rounded-xl border border-border bg-bg p-3 text-xs text-muted">
+          <p className="font-semibold text-ink">Expected columns</p>
+          <p className="mt-1">date · description · amount · type (optional: debit/credit) · category (optional)</p>
+          <p className="mt-1 text-faint">Works with most bank exports. Duplicates are skipped automatically. Categories are auto-suggested from keywords and your past imports.</p>
+        </div>
+        <Select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
+          <option value="">Import into account…</option>
+          {(accounts ?? []).filter((a) => a.isActive && a.type !== "credit_card").map((a) => (
+            <option key={a.id} value={a.id}>{a.name}</option>
+          ))}
+        </Select>
+        <input
+          type="file"
+          accept=".csv,.xlsx,.xls"
+          disabled={busy}
+          onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
+          className="block w-full text-sm text-muted file:mr-3 file:rounded-xl file:border-0 file:bg-accent file:px-4 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-accentstrong"
+        />
+        {busy && <p className="text-xs text-muted">Importing…</p>}
+        {error && <p className="rounded-xl bg-danger/10 px-3 py-2 text-xs font-medium text-danger">{error}</p>}
+        {result && (
+          <div className="rounded-xl bg-good/10 px-3 py-2.5 text-xs text-good">
+            <b>{result.inserted}</b> of {result.total} rows imported · {result.dupes} duplicates skipped.
+            <div className="mt-2">
+              <Btn size="sm" variant="outline" onClick={() => { setResult(null); onClose(); }}>Done</Btn>
+            </div>
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+export default function TransactionsPage() {
+  return (
+    <Suspense fallback={<div className="py-20 text-center text-sm text-muted">Loading…</div>}>
+      <TransactionsInner />
+    </Suspense>
+  );
+}

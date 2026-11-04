@@ -1,0 +1,46 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #f6f7f9;
+  --card: #ffffff;
+  --cardhover: #f1f2f5;
+  --border: #e5e7eb;
+  --ink: #0f172a;
+  --muted: #64748b;
+  --faint: #94a3b8;
+  --accent: #4f46e5;
+  --accentstrong: #4338ca;
+  --danger: #e11d48;
+  --warn: #d97706;
+  --good: #059669;
+}
+
+.dark {
+  --bg: #0b0f17;
+  --card: #111827;
+  --cardhover: #1c2536;
+  --border: #223048;
+  --ink: #e5e9f0;
+  --muted: #94a3b8;
+  --faint: #64748b;
+  --accent: #6366f1;
+  --accentstrong: #818cf8;
+  --danger: #fb4d6d;
+  --warn: #f59e0b;
+  --good: #34d399;
+}
+
+html, body {
+  background-color: var(--bg);
+  color: var(--ink);
+}
+
+/* thin scrollbars */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* tabular numbers for money columns */
+.tnum { font-variant-numeric: tabular-nums; }
