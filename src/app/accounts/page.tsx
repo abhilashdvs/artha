@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAccounts, useBalances, usePaymentMethods, useTxns } from "@/lib/hooks";
 import { formatINR, toPaise } from "@/lib/money";
 import { ccOutstanding, computeBalances } from "@/lib/finance";
@@ -25,6 +25,13 @@ export default function AccountsPage() {
   const [archiveAcct, setArchiveAcct] = useState<Account | null>(null);
   const [removePm, setRemovePm] = useState<PaymentMethod | null>(null);
 
+  // the Get started guide links here with ?new=account or ?new=app to open the right form
+  useEffect(() => {
+    const want = new URLSearchParams(window.location.search).get("new");
+    if (want === "account") setAcctModal("new");
+    if (want === "app") setPmModal("new");
+  }, []);
+
   const derived = useMemo(() => {
     if (!accounts || !balances) return null;
     const active = accounts.filter((a) => a.isActive);
@@ -46,8 +53,8 @@ export default function AccountsPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Accounts & Cards</h1>
-          <p className="text-sm text-muted">Where your money actually lives</p>
+          <h1 className="text-2xl font-bold tracking-tight">Accounts &amp; cards</h1>
+          <p className="text-sm text-muted">Your bank accounts, cash and cards</p>
         </div>
         <Btn size="sm" onClick={() => setAcctModal("new")}><Plus size={14} /> Add account</Btn>
       </div>
@@ -82,7 +89,7 @@ export default function AccountsPage() {
             const Icon = ACCT_ICON[a.type];
             return (
               <Card key={a.id} className="relative">
-                {a.isDemo && <span className="absolute right-3 top-3"><Badge tone="warn">demo</Badge></span>}
+                
                 <div className="flex items-center gap-2.5">
                   <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent/10 text-accent">
                     <Icon size={16} />
@@ -114,10 +121,10 @@ export default function AccountsPage() {
       {/* payment methods */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-bold tracking-tight">Payment Methods</h2>
-          <p className="text-xs text-muted">UPI apps & payment rails — these never hold balances, only linked accounts move</p>
+          <h2 className="text-lg font-bold tracking-tight">Apps &amp; cards</h2>
+          <p className="text-xs text-muted">The ways you pay — GPay, PhonePe, cards. Money always comes from the bank account each one is linked to.</p>
         </div>
-        <Btn size="sm" variant="outline" onClick={() => setPmModal("new")}><Plus size={14} /> Add method</Btn>
+        <Btn size="sm" variant="outline" onClick={() => setPmModal("new")}><Plus size={14} /> Add app or card</Btn>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -126,7 +133,7 @@ export default function AccountsPage() {
             <div className="flex items-center gap-2">
               <Smartphone size={15} className="text-muted" />
               <p className="min-w-0 truncate text-sm font-semibold text-ink" title={p.name}>{p.name}</p>
-              {p.isDemo && <Badge tone="warn">demo</Badge>}
+             
             </div>
             <p className="mt-1 text-[11px] text-muted">
               {PAYMENT_TYPE_LABEL[p.type]}
@@ -171,7 +178,7 @@ export default function AccountsPage() {
       </Modal>
 
       {/* remove payment method confirm */}
-      <Modal open={!!removePm} onClose={() => setRemovePm(null)} title="Remove payment method?">
+      <Modal open={!!removePm} onClose={() => setRemovePm(null)} title="Remove this app or card?">
         {removePm && (
           <div className="space-y-4">
             <p className="text-sm text-muted">
@@ -304,7 +311,7 @@ function PaymentMethodModal({
   }
 
   return (
-    <Modal open={open} onClose={onClose} title={initial ? "Edit payment method" : "Add payment method"}>
+    <Modal open={open} onClose={onClose} title={initial ? "Edit app or card" : "Add an app or card"}>
       <div className="space-y-3">
         <Field label="Name"><Input placeholder="e.g. GPay, PhonePe, Cred" value={name} onChange={(e) => setName(e.target.value)} /></Field>
         <Field label="Type">
@@ -325,7 +332,7 @@ function PaymentMethodModal({
         {error && <p className="rounded-xl bg-danger/10 px-3 py-2 text-xs font-medium text-danger">{error}</p>}
         <div className="flex justify-end gap-2">
           <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
-          <Btn onClick={save}>{initial ? "Save" : "Add method"}</Btn>
+          <Btn onClick={save}>{initial ? "Save" : "Add"}</Btn>
         </div>
       </div>
     </Modal>

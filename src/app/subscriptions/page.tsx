@@ -6,7 +6,7 @@ import { addSubscription, deleteSubscription, updateSubscription } from "@/lib/d
 import { annualCost, radarLevel, subscriptionMonthlyCost, subscriptionYearlyCost, type RadarLevel } from "@/lib/finance";
 import { formatINR, toPaise } from "@/lib/money";
 import { fmtDay, todayDateInput } from "@/lib/dates";
-import { Badge, Btn, Card, CardTitle, Empty, Field, Input, Modal, Select } from "@/components/ui";
+import { Badge, Btn, Card, CardTitle, Empty, Field, Input, Modal, Select, categoryOptions } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import type { Account, BillingCycle, Category, PaymentMethod, PaymentMethodType, Subscription } from "@/lib/types";
 import { addDays, addMonths, addYears, differenceInCalendarDays, format, parseISO, startOfToday } from "date-fns";
@@ -144,7 +144,7 @@ export default function SubscriptionsPage() {
                       <div className="flex items-center gap-2">
                         <p className="truncate text-sm font-semibold text-ink">{s.name}</p>
                         <span className="hidden shrink-0 items-center gap-2 sm:flex">
-                          {s.isDemo && <Badge tone="warn">demo</Badge>}
+                         
                           <Badge>{CYCLE_LABEL[s.cycle]}</Badge>
                         </span>
                       </div>
@@ -296,9 +296,7 @@ function SubModal({
         <Field label="Category">
           <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
             <option value="">None</option>
-            {categories.filter((c) => !c.isArchived && c.kind === "expense").map((c) => (
-              <option key={c.id} value={c.id}>{c.parentId ? "— " : ""}{c.name}</option>
-            ))}
+            {categoryOptions(categories.filter((c) => !c.isArchived && c.kind === "expense"))}
           </Select>
         </Field>
         {paymentMethods.filter((p) => p.isActive).length === 0 && (

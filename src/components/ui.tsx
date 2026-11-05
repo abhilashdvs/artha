@@ -376,3 +376,21 @@ export function DemoBadge() {
     </span>
   );
 }
+
+/**
+ * <option>s for a category picker, grouped under each main category
+ * (main category first, then its sub-categories). Works with <Select>.
+ */
+export function categoryOptions(list: { id: string; name: string; parentId?: string }[]) {
+  const ids = new Set(list.map((c) => c.id));
+  const roots = list.filter((c) => !c.parentId || !ids.has(c.parentId)).sort((a, b) => a.name.localeCompare(b.name));
+  return roots.map((r) => {
+    const kids = list.filter((c) => c.parentId === r.id).sort((a, b) => a.name.localeCompare(b.name));
+    return (
+      <optgroup key={r.id} label={r.name}>
+        <option value={r.id}>{kids.length ? `All ${r.name}` : r.name}</option>
+        {kids.map((k) => <option key={k.id} value={k.id}>{k.name}</option>)}
+      </optgroup>
+    );
+  });
+}

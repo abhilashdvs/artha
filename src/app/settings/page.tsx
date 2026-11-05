@@ -10,6 +10,7 @@ import { format } from "date-fns";
 import { AlertTriangle, Download, Sparkles, Trash2 } from "lucide-react";
 import { AccountSync } from "@/components/AccountSync";
 import { InstallApp } from "@/components/InstallApp";
+import { FeatureToggle } from "@/components/FeatureToggle";
 import { isSignedIn, wipeCloud } from "@/lib/sync";
 
 export default function SettingsPage() {
@@ -29,6 +30,8 @@ export default function SettingsPage() {
       <AccountSync />
 
       <InstallApp />
+
+      <FeatureToggle />
 
       <Card>
         <CardTitle title="Demo Mode" sub="Explore with realistic sample data" />

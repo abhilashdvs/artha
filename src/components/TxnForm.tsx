@@ -16,16 +16,16 @@ import { CategoryPicker } from "./CategoryPicker";
 // ─────────────────────────────────────────────────────────────
 
 export const TXN_TYPE_META: Record<TxnType, { label: string; help?: string }> = {
-  expense: { label: "Expense" },
-  income: { label: "Income" },
-  transfer: { label: "Transfer (own accounts)", help: "Never counted as income or expense." },
-  cc_payment: { label: "Credit Card Bill Payment", help: "Not an expense — card purchases already counted." },
-  lend: { label: "Lend Money", help: "Becomes a receivable asset, not consumption." },
-  lend_repayment: { label: "Loan Repayment Received", help: "Not income — reduces what you're owed." },
-  borrow: { label: "Borrow Money", help: "A liability, not income." },
-  borrow_repayment: { label: "Repay Borrowed Money", help: "Not an expense — reduces your debt." },
-  refund: { label: "Refund", help: "Reduces the original expense category, not income." },
-  investment: { label: "Investment / Savings", help: "Counted as savings deployed, not consumption." },
+  expense: { label: "Spent" },
+  income: { label: "Received" },
+  transfer: { label: "Moved", help: "Between your own accounts — not counted as spending or income." },
+  cc_payment: { label: "Paid card bill", help: "Not spending — the purchases on the card were already counted." },
+  lend: { label: "Lent to someone", help: "They owe you this — it isn't counted as spending." },
+  lend_repayment: { label: "Got money back", help: "Someone paid back what you lent — not counted as income." },
+  borrow: { label: "Borrowed", help: "You owe this — it isn't counted as income." },
+  borrow_repayment: { label: "Paid back a loan", help: "Reduces what you owe — not counted as spending." },
+  refund: { label: "Refund", help: "Takes the amount off the original category's spending." },
+  investment: { label: "Saved / invested", help: "Kept separate from spending." },
 };
 
 interface Props {
@@ -174,7 +174,7 @@ export function TxnForm({
                   type === t ? "bg-card text-ink shadow-card" : "text-muted hover:text-ink"
                 )}
               >
-                {t === "transfer" ? "Transfer" : TXN_TYPE_META[t].label}
+                {TXN_TYPE_META[t].label}
               </button>
             ))}
             <button

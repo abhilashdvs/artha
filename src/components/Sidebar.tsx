@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
   BarChart3, CalendarCheck, FolderTree, FileSpreadsheet, HandCoins, Home,
-  LayoutGrid, ListOrdered, Moon, Plus, Settings, Sun, Wallet,
+  LayoutGrid, ListOrdered, Moon, Plus, Radar, Settings, Sun, Wallet,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
@@ -13,23 +13,46 @@ import { useDemoMode } from "@/lib/hooks";
 import { Modal } from "./ui";
 import { openQuickAdd } from "./QuickAdd";
 import { useSyncStatus } from "@/lib/sync";
+import { useFeatures, type Features } from "@/lib/features";
 
 // Main sections — what you use every day.
 const MAIN = [
   { href: "/", label: "Home", icon: Home, match: ["/"] },
   { href: "/transactions", label: "Activity", icon: ListOrdered, match: ["/transactions", "/income"] },
   { href: "/plan", label: "Plan", icon: CalendarCheck, match: ["/plan", "/budgets", "/subscriptions", "/goals"] },
-  { href: "/lending", label: "People", icon: HandCoins, match: ["/lending"] },
+  { href: "/lending", label: "People", icon: HandCoins, match: ["/lending"], feature: "people" as keyof Features },
 ];
 
 // Everything else — setup and deeper analysis.
 const MORE = [
-  { href: "/analytics", label: "Insights", icon: BarChart3 },
+  { href: "/analytics", label: "Insights", icon: BarChart3, feature: "insights" as keyof Features },
   { href: "/accounts", label: "Accounts & cards", icon: Wallet },
-  { href: "/categories", label: "Categories", icon: FolderTree },
-  { href: "/reports", label: "Reports", icon: FileSpreadsheet },
+  { href: "/categories", label: "Categories", icon: FolderTree, feature: "categories" as keyof Features },
+  { href: "/reports", label: "Reports", icon: FileSpreadsheet, feature: "reports" as keyof Features },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
+
+/** Simple mode: hide sections that aren't useful yet (see lib/features.ts). */
+function useVisible() {
+  const f = useFeatures();
+  // nothing until the answer is known, so items never pop in and push others around
+  return <T extends { feature?: keyof Features }>(items: T[]) => (f.ready ? items.filter((i) => !i.feature || f[i.feature]) : []);
+}
+
+/** The Plan tab is just Subscription Radar in simple mode — call it "Bills" then. */
+function usePlanItem() {
+  const f = useFeatures();
+  const simple = !f.budgets && !f.goals;
+  return simple ? { ...MAIN[2], label: "Bills", icon: Radar } : MAIN[2];
+}
+
+/** Tapping the tab you're already on scrolls back to the top (like phone apps). */
+function scrollTopIfCurrent(e: React.MouseEvent, href: string) {
+  if (window.location.pathname === href && !window.location.search) {
+    e.preventDefault();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+}
 
 function useIsActive() {
   const pathname = usePathname();
@@ -90,7 +113,10 @@ function SyncNote() {
 }
 
 export function Sidebar() {
+  const ready = useFeatures().ready;
   const isActive = useIsActive();
+  const visible = useVisible();
+  const planItem = usePlanItem();
   const link = (item: { href: string; label: string; icon: typeof Home }, active: boolean, small = false) => (
     <Link
       key={item.href}
@@ -127,12 +153,12 @@ export function Sidebar() {
       </div>
 
       <nav className="flex-1 overflow-y-auto px-3 py-4">
-        <div className="space-y-1">{MAIN.map((i) => link(i, isActive(i.match)))}</div>
-        <p className="mb-1 mt-6 px-3 text-[11px] font-semibold uppercase tracking-wider text-faint">More</p>
-        <div className="space-y-0.5">{MORE.map((i) => link(i, isActive([i.href]), true))}</div>
+        <div className="space-y-1">{visible(MAIN).map((i) => (i.href === "/plan" ? planItem : i)).map((i) => link(i, isActive(i.match)))}</div>
+        {ready && <p className="mb-1 mt-6 px-3 text-[11px] font-semibold uppercase tracking-wider text-faint">More</p>}
+        <div className="space-y-0.5">{visible(MORE).map((i) => link(i, isActive([i.href]), true))}</div>
       </nav>
 
-      <div className="space-y-2 px-3 pb-4">
+      <div className={cn("space-y-2 px-3 pb-4", !ready && "invisible")}>
         <DemoNote />
         <SyncNote />
       </div>
@@ -147,7 +173,9 @@ export function MobileNav() {
   const [moreOpen, setMoreOpen] = useState(false);
   // the tab you just tapped — highlighted immediately, before the page has loaded
   const [pending, setPending] = useState<string | null>(null);
-  const moreItems = [MAIN[3], ...MORE];
+  const visible = useVisible();
+  const planItem = usePlanItem();
+  const moreItems = visible([MAIN[3], ...MORE]);
   const moreActive = moreItems.some((n) => isActive([n.href]));
 
   useEffect(() => setPending(null), [pathname]);
@@ -176,7 +204,10 @@ export function MobileNav() {
       <Link
         key={item.href}
         href={item.href}
-        onClick={() => setPending(item.href)}
+        onClick={(e) => {
+          scrollTopIfCurrent(e, item.href);
+          setPending(item.href);
+        }}
         aria-current={active ? "page" : undefined}
         className="flex flex-1 flex-col items-center gap-0.5 py-0.5 active:scale-95"
       >
@@ -202,7 +233,7 @@ export function MobileNav() {
             <Plus size={26} />
           </button>
         </div>
-        {tab(MAIN[2])}
+        {tab(planItem)}
         <button
           onClick={() => setMoreOpen(true)}
           className="flex flex-1 flex-col items-center gap-0.5 py-0.5 active:scale-95"

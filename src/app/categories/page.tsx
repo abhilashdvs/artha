@@ -6,7 +6,7 @@ import { addCategory, deleteCategoryWith, updateCategory } from "@/lib/db";
 import { formatINR } from "@/lib/money";
 import { filterByRange, monthRange } from "@/lib/dates";
 import { expenseTotal } from "@/lib/finance";
-import { Badge, Btn, Card, Field, Input, Modal, Select } from "@/components/ui";
+import { Badge, Btn, Card, Field, Input, Modal, Select, categoryOptions } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import type { Category } from "@/lib/types";
 import { FolderTree, Pencil, Plus, Trash2 } from "lucide-react";
@@ -131,11 +131,7 @@ export default function CategoriesPage() {
                 </p>
                 <Select value={mergeInto} onChange={(e) => setMergeInto(e.target.value)}>
                   <option value="">Select replacement…</option>
-                  {active
-                    .filter((c) => c.id !== deleteTarget.id && c.parentId !== deleteTarget.id && c.kind === deleteTarget.kind)
-                    .map((c) => (
-                      <option key={c.id} value={c.id}>{c.parentId ? "— " : ""}{c.name}</option>
-                    ))}
+                  {categoryOptions(active.filter((c) => c.id !== deleteTarget.id && c.parentId !== deleteTarget.id && c.kind === deleteTarget.kind))}
                 </Select>
               </>
             ) : (

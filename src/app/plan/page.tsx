@@ -6,21 +6,26 @@ import { cn } from "@/lib/utils";
 import BudgetsPage from "../budgets/page";
 import SubscriptionsPage from "../subscriptions/page";
 import GoalsPage from "../goals/page";
+import { useFeatures } from "@/lib/features";
 
 const TABS = [
-  { key: "budgets", label: "Budgets", Page: BudgetsPage },
-  { key: "bills", label: "Subscription Radar", Page: SubscriptionsPage },
-  { key: "goals", label: "Goals", Page: GoalsPage },
+  { key: "bills", label: "Subscription Radar", Page: SubscriptionsPage, feature: null },
+  { key: "budgets", label: "Budgets", Page: BudgetsPage, feature: "budgets" },
+  { key: "goals", label: "Goals", Page: GoalsPage, feature: "goals" },
 ] as const;
 
 function PlanInner() {
   const params = useSearchParams();
   const router = useRouter();
-  const current = TABS.find((t) => t.key === params.get("tab")) ?? TABS[0];
+  const f = useFeatures();
+  // simple mode: Budgets / Goals tabs appear once you use them (or "Show all features")
+  const tabs = TABS.filter((t) => !t.feature || f[t.feature] || params.get("tab") === t.key);
+  const current = tabs.find((t) => t.key === params.get("tab")) ?? tabs[0];
   return (
     <div className="space-y-5">
+      {tabs.length > 1 && (
       <div className="flex gap-1 overflow-x-auto rounded-xl bg-cardhover p-1 sm:inline-flex">
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button
             key={t.key}
             onClick={() => router.replace(`/plan?tab=${t.key}`, { scroll: false })}
@@ -33,6 +38,7 @@ function PlanInner() {
           </button>
         ))}
       </div>
+      )}
       <current.Page />
     </div>
   );

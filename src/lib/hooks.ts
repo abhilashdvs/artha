@@ -45,6 +45,12 @@ export function useSetting<T>(key: string, fallback: T): T {
   return row ? (row.value as T) : fallback;
 }
 
+/** Like useSetting, but also says whether the value has loaded yet (avoids flicker). */
+export function useSettingState<T>(key: string, fallback: T): { value: T; loaded: boolean } {
+  const row = useLiveQuery(async () => (await db.settings.get(key)) ?? null, [key]);
+  return { value: row ? (row.value as T) : fallback, loaded: row !== undefined };
+}
+
 export function useDemoMode(): boolean {
   return useSetting<boolean>("demoMode", false);
 }

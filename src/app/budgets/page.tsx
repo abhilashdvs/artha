@@ -6,7 +6,7 @@ import { addBudget, deleteBudget, updateBudget } from "@/lib/db";
 import { budgetProgress } from "@/lib/finance";
 import { formatINR, pct, toPaise } from "@/lib/money";
 import { daysLeftInMonth } from "@/lib/dates";
-import { Badge, Btn, Card, Empty, Field, Input, Modal, Progress, Select } from "@/components/ui";
+import { Badge, Btn, Card, Empty, Field, Input, Modal, Progress, Select, categoryOptions } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import type { Budget, Category } from "@/lib/types";
 import { Pencil, PiggyBank, Plus, Trash2 } from "lucide-react";
@@ -88,7 +88,7 @@ export default function BudgetsPage() {
                     </p>
                     <p className="text-[11px] text-muted">
                       {p.budget.categoryId ? "Category budget" : "Total across all categories"}
-                      {p.budget.isDemo && <Badge tone="warn">demo</Badge>}
+                     
                     </p>
                   </div>
                   <div className="flex shrink-0 gap-1">
@@ -170,9 +170,7 @@ function BudgetModal({
         <Field label="Category" hint="Leave as Overall to budget total monthly spending.">
           <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
             <option value="">Overall (all expenses)</option>
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>{c.parentId ? "— " : ""}{c.name}</option>
-            ))}
+            {categoryOptions(categories)}
           </Select>
         </Field>
         <Field label="Monthly limit (₹)">

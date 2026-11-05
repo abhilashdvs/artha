@@ -32,7 +32,7 @@ export default function GoalsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Savings Goals</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Goals</h1>
           <p className="text-sm text-muted">Trips, gadgets, emergency fund — track progress toward each</p>
         </div>
         <Btn size="sm" onClick={() => setModal("new")}><Plus size={14} /> New goal</Btn>
@@ -56,7 +56,7 @@ export default function GoalsPage() {
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-semibold text-ink" title={g.name}>
-                      {g.name} {g.isDemo && <Badge tone="warn">demo</Badge>}
+                      {g.name}
                     </p>
                     <p className="truncate text-[11px] text-muted" title={`${g.targetDate ? `target ${fmtDay(g.targetDate)}` : "no deadline"}${g.notes ? ` · ${g.notes}` : ""}`}>
                       {g.targetDate ? `target ${fmtDay(g.targetDate)}` : "no deadline"}

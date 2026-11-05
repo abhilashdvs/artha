@@ -1,5 +1,4 @@
 import Papa from "papaparse";
-import * as XLSX from "xlsx";
 import { format, isValid, parse, parseISO } from "date-fns";
 import type { Category, Txn } from "./types";
 import type { CategorySlice, MonthPoint } from "./analytics";
@@ -178,6 +177,8 @@ export async function parseCsvFile(file: File): Promise<Record<string, string>[]
   const name = file.name.toLowerCase();
   if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
     const buf = await file.arrayBuffer();
+    // the Excel reader is large — load it only when someone actually imports a spreadsheet
+    const XLSX = await import("xlsx");
     const wb = XLSX.read(buf);
     const sheet = wb.Sheets[wb.SheetNames[0]];
     return XLSX.utils.sheet_to_json<Record<string, string>>(sheet, { raw: false });

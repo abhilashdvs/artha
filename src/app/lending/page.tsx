@@ -40,36 +40,20 @@ export default function LendingPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Lending & Borrowing</h1>
-          <p className="text-sm text-muted">Lent money is an asset — never counted as spending. Borrowed is a liability — never income.</p>
+          <h1 className="text-2xl font-bold tracking-tight">People</h1>
+          <p className="text-sm text-muted">Money you've lent and borrowed</p>
         </div>
         <Btn size="sm" onClick={() => setLoanModal("new")}><Plus size={14} /> New person</Btn>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3">
         <div className="rounded-2xl border border-border bg-card p-4">
-          <p className="text-xs text-muted">You're owed</p>
+          <p className="text-xs text-muted">Owed to you</p>
           <p className="tnum mt-1 text-lg font-bold text-good">{formatINR(totalOut)}</p>
         </div>
         <div className="rounded-2xl border border-border bg-card p-4">
           <p className="text-xs text-muted">You owe</p>
           <p className={cn("tnum mt-1 text-lg font-bold", totalOwe > 0 ? "text-warn" : "text-ink")}>{formatINR(totalOwe)}</p>
-        </div>
-        <div className="rounded-2xl border border-border bg-card p-4">
-          <p className="text-xs text-muted">Net position</p>
-          <p className={cn("tnum mt-1 text-lg font-bold", totalOut - totalOwe >= 0 ? "text-good" : "text-danger")}>
-            {formatINR(totalOut - totalOwe)}
-          </p>
-        </div>
-        <div className="rounded-2xl border border-border bg-card p-4">
-          <p className="text-xs text-muted">Recovery rate (lent)</p>
-          <p className="tnum mt-1 truncate text-lg font-bold" title={lent.length > 0 ? "weighted by principal" : undefined}>
-            {(() => {
-              const paid = lent.reduce((s, x) => s + x.paid, 0);
-              const base = lent.reduce((s, x) => s + x.paid + x.outstanding, 0);
-              return base > 0 ? `${((paid / base) * 100).toFixed(0)}%` : "—";
-            })()}
-          </p>
         </div>
       </div>
 
@@ -82,8 +66,8 @@ export default function LendingPage() {
       ) : (
         <>
           {[
-            { title: "Money You've Lent", sub: "Receivable assets", list: lent, empty: "Nothing outstanding" },
-            { title: "Money You've Borrowed", sub: "Liabilities to repay", list: borrowed, empty: "You owe nothing 🎉" },
+            { title: "You lent", sub: "People who owe you", list: lent, empty: "Nothing outstanding" },
+            { title: "You borrowed", sub: "People you owe", list: borrowed, empty: "You owe nothing 🎉" },
           ].map((section) => (
             <Card key={section.title}>
               <CardTitle title={section.title} sub={section.sub} />
@@ -216,7 +200,7 @@ function LoanRow({
         <div className="min-w-0">
           <p className="flex flex-wrap items-center gap-1.5 text-sm font-semibold text-ink">
             <span className="truncate" title={s.loan.personName}>{s.loan.personName}</span>
-            {s.loan.isDemo && <Badge tone="warn">demo</Badge>}
+           
             {s.loan.status === "partial" && <Badge tone="accent">partially repaid</Badge>}
             {s.loan.direction === "lent" && age > 45 && s.outstanding > 0 && <Badge tone="warn">{age}d old</Badge>}
           </p>

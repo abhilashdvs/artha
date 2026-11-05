@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   useAccounts, useCategories, useGoals, useLoans, usePaymentMethods, useTxns,
@@ -9,18 +9,18 @@ import { filterByRange, fmtDay, monthKeyOf, rangeForPreset, type DatePreset, typ
 import { formatINR } from "@/lib/money";
 import { addTxn, deleteTxn, updateTxn } from "@/lib/db";
 import { exportTxnsCsv, parseCsvFile, previewImport, runImport, type ImportItem, type ImportPlan, type SkippedRow } from "@/lib/csv";
-import { Card, CardTitle, Btn, Empty, Input, Modal, Select, Badge } from "@/components/ui";
+import { Card, CardTitle, Btn, Empty, Input, Modal, Select, Badge, categoryOptions } from "@/components/ui";
 import { DateFilter } from "@/components/DateFilter";
 import { TxnForm } from "@/components/TxnForm";
 import { cn, downloadFile } from "@/lib/utils";
 import { ArrowDownUp, Download, Pencil, Search, SlidersHorizontal, Trash2, Upload } from "lucide-react";
-import { startOfMonth, format, parseISO } from "date-fns";
+import { endOfDay, startOfMonth, format, parseISO } from "date-fns";
 import type { Txn, TxnType } from "@/lib/types";
 
 const TYPE_LABEL: Record<TxnType, string> = {
-  expense: "Expense", income: "Income", transfer: "Transfer", cc_payment: "CC Payment",
-  lend: "Lend", lend_repayment: "Lend Repay", borrow: "Borrow", borrow_repayment: "Borrow Repay",
-  refund: "Refund", investment: "Investment",
+  expense: "Spent", income: "Received", transfer: "Moved", cc_payment: "Card bill",
+  lend: "Lent", lend_repayment: "Got back", borrow: "Borrowed", borrow_repayment: "Paid back",
+  refund: "Refund", investment: "Saved",
 };
 
 function TransactionsInner() {
@@ -32,18 +32,57 @@ function TransactionsInner() {
   const goals = useGoals();
   const txns = useTxns();
 
-  const [preset, setPreset] = useState<DatePreset>("month");
-  const [custom, setCustom] = useState<DateRange>({ start: startOfMonth(new Date()), end: new Date() });
-  const [q, setQ] = useState("");
-  const [typeFilter, setTypeFilter] = useState<string>("all");
-  const [catFilter, setCatFilter] = useState<string>("all");
-  const [acctFilter, setAcctFilter] = useState<string>("all");
-  const [showFilters, setShowFilters] = useState(false);
+  // Links from Home can open Activity already filtered:
+  //   ?type=income  ?cat=<id>  ?acct=<id>  ?from=yyyy-MM-dd&to=yyyy-MM-dd  ?edit=<txn id>
+  // otherwise, come back to the filters you last used (this session only)
+  const linked = ["type", "cat", "acct", "from", "to", "edit"].some((k) => params.has(k));
+  const saved = (() => {
+    if (linked || typeof window === "undefined") return null;
+    try {
+      return JSON.parse(sessionStorage.getItem("artha:activity") || "null") as
+        | { preset: DatePreset; start: string; end: string; q: string; type: string; cat: string; acct: string }
+        | null;
+    } catch { return null; }
+  })();
+  const fromParam = params.get("from");
+  const toParam = params.get("to");
+  const [preset, setPreset] = useState<DatePreset>(fromParam && toParam ? "custom" : saved?.preset ?? "month");
+  const [custom, setCustom] = useState<DateRange>(
+    fromParam && toParam
+      ? { start: parseISO(fromParam), end: endOfDay(parseISO(toParam)) }
+      : saved?.preset === "custom"
+        ? { start: parseISO(saved.start), end: parseISO(saved.end) }
+        : { start: startOfMonth(new Date()), end: new Date() }
+  );
+  const [q, setQ] = useState(saved?.q ?? "");
+  const [typeFilter, setTypeFilter] = useState<string>(params.get("type") ?? saved?.type ?? "all");
+  const [catFilter, setCatFilter] = useState<string>(params.get("cat") ?? saved?.cat ?? "all");
+  const [acctFilter, setAcctFilter] = useState<string>(params.get("acct") ?? saved?.acct ?? "all");
+  const [showFilters, setShowFilters] = useState(
+    Boolean(params.get("type") || params.get("cat") || params.get("acct") || (saved && (saved.type !== "all" || saved.cat !== "all" || saved.acct !== "all")))
+  );
+  useEffect(() => {
+    try {
+      sessionStorage.setItem("artha:activity", JSON.stringify({
+        preset, start: custom.start.toISOString(), end: custom.end.toISOString(), q, type: typeFilter, cat: catFilter, acct: acctFilter,
+      }));
+    } catch { /* ignore */ }
+  }, [preset, custom, q, typeFilter, catFilter, acctFilter]);
   const activeFilterCount = [typeFilter, catFilter, acctFilter].filter((f) => f !== "all").length;
   const [sortDesc, setSortDesc] = useState(true);
   const [editTxn, setEditTxn] = useState<Txn | null>(null);
   const [delTxn, setDelTxn] = useState<Txn | null>(null);
   const [importOpen, setImportOpen] = useState(params.get("import") === "1");
+
+  // ?edit=<id>: open that transaction once the data has loaded (only once)
+  const editParam = params.get("edit");
+  const [editHandled, setEditHandled] = useState(false);
+  useEffect(() => {
+    if (!editParam || editHandled || !txns) return;
+    setEditHandled(true);
+    const t = txns.find((x) => x.id === editParam);
+    if (t) setEditTxn(t);
+  }, [editParam, editHandled, txns]);
 
   const range = useMemo(() => rangeForPreset(preset, custom), [preset, custom]);
 
@@ -126,16 +165,14 @@ function TransactionsInner() {
         {showFilters && (
           <div className="grid gap-2 sm:grid-cols-3">
             <Select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
-              <option value="all">All types</option>
+              <option value="all">Everything</option>
               {Object.entries(TYPE_LABEL).map(([k, v]) => (
                 <option key={k} value={k}>{v}</option>
               ))}
             </Select>
             <Select value={catFilter} onChange={(e) => setCatFilter(e.target.value)}>
               <option value="all">All categories</option>
-              {categories.filter((c) => !c.isArchived).map((c) => (
-                <option key={c.id} value={c.id}>{c.parentId ? "— " : ""}{c.name}</option>
-              ))}
+              {categoryOptions(categories.filter((c) => !c.isArchived))}
             </Select>
             <Select value={acctFilter} onChange={(e) => setAcctFilter(e.target.value)}>
               <option value="all">All accounts</option>
@@ -191,7 +228,7 @@ function TransactionsInner() {
                                 {TYPE_LABEL[t.type]}
                               </Badge>
                             )}
-                            {t.isDemo && <Badge tone="warn">demo</Badge>}
+                           
                           </div>
                           <p className="mt-0.5 truncate text-xs text-muted">
                             {acctName(t.accountId)}
