@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useAccounts, useCategories, usePaymentMethods, useSubscriptions } from "@/lib/hooks";
-import { addSubscription, addTxn, deleteSubscription, updateSubscription } from "@/lib/db";
+import { useMemo, useRef, useState } from "react";
+import { useAccounts, useCategories, usePaymentMethods, useSubscriptions, useTxns } from "@/lib/hooks";
+import { addSubscription, addTxn, deleteSubscription, deleteTxn, updateSubscription } from "@/lib/db";
 import { annualCost, radarLevel, subscriptionMonthlyCost, subscriptionYearlyCost, type RadarLevel } from "@/lib/finance";
 import { formatINR, toPaise } from "@/lib/money";
 import { fmtDay, todayDateInput } from "@/lib/dates";
@@ -44,40 +44,50 @@ function advanceCycle(from: string, cycle: BillingCycle): string {
   return format(next, "yyyy-MM-dd");
 }
 
-/** Roll a subscription's due date forward by its cycle until it is today or later. */
-function currentDue(nextDueDate: string, cycle: BillingCycle): string {
-  const today = todayDateInput();
-  let d = nextDueDate.slice(0, 10);
-  let guard = 0;
-  while (d < today && guard++ < 500) d = advanceCycle(d, cycle);
-  return d;
+function rewindCycle(from: string, cycle: BillingCycle): string {
+  const d = parseISO(from);
+  const prev =
+    cycle === "weekly" ? addDays(d, -7) : cycle === "monthly" ? addMonths(d, -1) : cycle === "quarterly" ? addMonths(d, -3) : addYears(d, -1);
+  return format(prev, "yyyy-MM-dd");
 }
+
+// A "Mark paid" payment is tagged with the subscription and the due date it paid,
+// so the Radar knows a cycle is paid (no double payments) and can undo it.
+const subTag = (id: string) => `sub:${id}`;
+const dueTag = (date: string) => `due:${date}`;
 
 export default function SubscriptionsPage() {
   const subs = useSubscriptions();
   const accounts = useAccounts();
   const categories = useCategories();
   const paymentMethods = usePaymentMethods();
+  const txns = useTxns();
   const [modal, setModal] = useState<Subscription | "new" | null>(null);
   const [delSub, setDelSub] = useState<Subscription | null>(null);
   const [paySub, setPaySub] = useState<(Subscription & { due: string }) | null>(null);
 
   const derived = useMemo(() => {
-    if (!subs) return null;
+    if (!subs || !txns) return null;
     const active = subs.filter((s) => s.isActive);
     const monthly = subscriptionMonthlyCost(active);
     const yearly = subscriptionYearlyCost(active);
     const upcoming = active
       .map((s) => {
-        const due = currentDue(s.nextDueDate, s.cycle);
+        // the stored due date as-is: a missed bill shows as overdue until you mark it paid
+        const due = s.nextDueDate.slice(0, 10);
         const daysLeft = differenceInCalendarDays(parseISO(due), startOfToday());
-        return { ...s, due, daysLeft, level: radarLevel(daysLeft) };
+        // the payment for the cycle just before this due date, if made with "Mark paid"
+        const prevDue = rewindCycle(due, s.cycle);
+        const lastPaid = txns
+          .filter((t) => t.tags?.includes(subTag(s.id)) && t.tags.includes(dueTag(prevDue)))
+          .sort((a, b) => b.date.localeCompare(a.date))[0];
+        return { ...s, due, daysLeft, level: radarLevel(daysLeft), lastPaid, prevDue };
       })
       .sort((a, b) => a.daysLeft - b.daysLeft);
     const red = upcoming.filter((s) => s.level === "red");
     const yellow = upcoming.filter((s) => s.level === "yellow");
     return { active, monthly, yearly, upcoming, red, yellow, dailyBurn: yearly / 365 };
-  }, [subs]);
+  }, [subs, txns]);
 
   if (!derived || !accounts || !categories || !paymentMethods) {
     return <div className="py-20 text-center text-sm text-muted">Loading…</div>;
@@ -157,17 +167,35 @@ export default function SubscriptionsPage() {
                         <span className="sm:hidden">{CYCLE_LABEL[s.cycle]} · </span>
                         {cat?.name ?? "Uncategorised"} · {fmtDay(s.due)}
                       </p>
-                      <button
-                        onClick={() => setPaySub(s)}
-                        className={cn(
-                          "mt-2 inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium transition-colors active:scale-95",
-                          s.level === "clear"
-                            ? "border border-border text-muted hover:bg-cardhover hover:text-ink"
-                            : "bg-accent text-white hover:bg-accentstrong"
-                        )}
-                      >
-                        <Check size={13} /> Mark paid
-                      </button>
+                      {s.level === "clear" && s.lastPaid ? (
+                        // this cycle is paid: say so, and allow undoing a mistaken tap
+                        <div className="mt-2 flex items-center gap-2">
+                          <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-good/10 px-3 py-1 text-xs font-medium text-good">
+                            <Check size={13} /> Paid {format(parseISO(s.lastPaid.date), "d MMM")}
+                          </span>
+                          <button
+                            onClick={async () => {
+                              await deleteTxn(s.lastPaid!.id);
+                              await updateSubscription(s.id, { nextDueDate: s.prevDue });
+                            }}
+                            className="rounded-full px-2 py-1 text-xs text-muted hover:bg-cardhover hover:text-ink"
+                          >
+                            Undo
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setPaySub(s)}
+                          className={cn(
+                            "mt-2 inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium transition-colors active:scale-95",
+                            s.level === "clear"
+                              ? "border border-border text-muted hover:bg-cardhover hover:text-ink"
+                              : "bg-accent text-white hover:bg-accentstrong"
+                          )}
+                        >
+                          <Check size={13} /> {s.daysLeft < 0 ? "Mark paid (overdue)" : "Mark paid"}
+                        </button>
+                      )}
                     </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-3">
@@ -344,6 +372,8 @@ function PayModal({
   const [pmId, setPmId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // a second tap while the first is saving must not record a second payment
+  const saving = useRef(false);
 
   // re-fill whenever a different subscription is opened (key-state pattern)
   const [key, setKey] = useState<string | null>(null);
@@ -361,10 +391,11 @@ function PayModal({
   const next = advanceCycle(sub.due, sub.cycle);
 
   async function confirm() {
-    if (!sub) return;
+    if (!sub || saving.current) return;
     const amt = toPaise(amount);
     if (amt <= 0) return setError("Enter the amount you paid.");
     if (!accountId) return setError("Choose the account the money came from.");
+    saving.current = true;
     setBusy(true);
     try {
       const now = new Date();
@@ -378,11 +409,12 @@ function PayModal({
         categoryId: sub.categoryId,
         accountId,
         paymentMethodId: pmId || undefined,
-        tags: ["subscription"],
+        tags: ["subscription", subTag(sub.id), dueTag(sub.due)],
       });
       await updateSubscription(sub.id, { nextDueDate: next });
       onClose();
     } finally {
+      saving.current = false;
       setBusy(false);
     }
   }
