@@ -136,7 +136,9 @@ export function loanSummaries(loans: Loan[], txns: Txn[]): LoanSummary[] {
         else if (t.type === "borrow_repayment") paid += t.amount;
       }
     }
-    const outstanding = Math.max(principal - paid, 0);
+    // a loan you marked settled is closed: anything left was forgiven / written off,
+    // so it no longer counts as owed anywhere (Home, People, net worth, insights)
+    const outstanding = loan.status === "settled" ? 0 : Math.max(principal - paid, 0);
     const recoveryRate = principal > 0 ? Math.min((paid / principal) * 100, 100) : 0;
     const status =
       loan.status === "settled" ? "settled"

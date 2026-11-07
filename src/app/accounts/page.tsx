@@ -4,12 +4,13 @@ import { useEffect, useMemo, useState } from "react";
 import { useAccounts, useBalances, usePaymentMethods, useTxns } from "@/lib/hooks";
 import { formatINR, toPaise } from "@/lib/money";
 import { ccOutstanding, computeBalances } from "@/lib/finance";
-import { addAccount, addPaymentMethod, updateAccount, updatePaymentMethod } from "@/lib/db";
+import { addAccount, addPaymentMethod, addTxn, updateAccount, updatePaymentMethod } from "@/lib/db";
+import { todayDateInput } from "@/lib/dates";
 import { Badge, Btn, Card, CardTitle, Empty, Field, Input, Modal, Select } from "@/components/ui";
 import { ACCOUNT_TYPE_LABEL, PAYMENT_TYPE_LABEL, uid } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import type { Account, AccountType, PaymentMethod, PaymentMethodType } from "@/lib/types";
-import { Banknote, CreditCard, Landmark, Pencil, PiggyBank, Plus, Smartphone, Wallet } from "lucide-react";
+import { Banknote, Check, CreditCard, Landmark, Pencil, PiggyBank, Plus, Smartphone, Wallet } from "lucide-react";
 
 const ACCT_ICON: Record<AccountType, typeof Landmark> = {
   bank: Landmark, credit_card: CreditCard, cash: Banknote, wallet: Wallet, investment: PiggyBank,
@@ -24,6 +25,7 @@ export default function AccountsPage() {
   const [pmModal, setPmModal] = useState<PaymentMethod | "new" | null>(null);
   const [archiveAcct, setArchiveAcct] = useState<Account | null>(null);
   const [removePm, setRemovePm] = useState<PaymentMethod | null>(null);
+  const [payCard, setPayCard] = useState<{ card: Account; outstanding: number } | null>(null);
 
   // the Get started guide links here with ?new=account or ?new=app to open the right form
   useEffect(() => {
@@ -108,7 +110,10 @@ export default function AccountsPage() {
                     {a.billingDay ? ` · bills on ${a.billingDay}th` : ""}
                   </p>
                 )}
-                <div className="mt-3 flex gap-2">
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {a.type === "credit_card" && outstanding > 0 && (
+                    <Btn size="sm" onClick={() => setPayCard({ card: a, outstanding })}><Check size={12} /> Pay bill</Btn>
+                  )}
                   <Btn size="sm" variant="outline" onClick={() => setAcctModal(a)}><Pencil size={12} /> Edit</Btn>
                   <Btn size="sm" variant="ghost" onClick={() => setArchiveAcct(a)}>Archive</Btn>
                 </div>
@@ -176,6 +181,8 @@ export default function AccountsPage() {
           </div>
         )}
       </Modal>
+
+      <PayBillModal p={payCard} accounts={activeAccounts} onClose={() => setPayCard(null)} />
 
       {/* remove payment method confirm */}
       <Modal open={!!removePm} onClose={() => setRemovePm(null)} title="Remove this app or card?">
@@ -333,6 +340,71 @@ function PaymentMethodModal({
         <div className="flex justify-end gap-2">
           <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
           <Btn onClick={save}>{initial ? "Save" : "Add"}</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/**
+ * Pay a credit card bill: moves money from a bank account to the card.
+ * Not counted as spending — the purchases on the card already were.
+ */
+function PayBillModal({ p, accounts, onClose }: { p: { card: Account; outstanding: number } | null; accounts: Account[]; onClose: () => void }) {
+  const banks = accounts.filter((a) => a.type !== "credit_card");
+  const [amount, setAmount] = useState("");
+  const [fromId, setFromId] = useState("");
+  const [date, setDate] = useState(todayDateInput());
+  const [error, setError] = useState<string | null>(null);
+  const [key, setKey] = useState<string | null>(null);
+  if ((p?.card.id ?? null) !== key) {
+    setKey(p?.card.id ?? null);
+    if (p) {
+      setAmount(String(p.outstanding / 100));
+      setFromId(banks.find((a) => a.type === "bank")?.id ?? banks[0]?.id ?? "");
+      setDate(todayDateInput());
+      setError(null);
+    }
+  }
+  if (!p) return null;
+
+  async function pay() {
+    if (!p) return;
+    const amt = toPaise(amount);
+    if (amt <= 0) return setError("Enter the amount you paid.");
+    if (!fromId) return setError("Choose the account you paid from.");
+    await addTxn({
+      type: "cc_payment",
+      amount: amt,
+      date: (date === todayDateInput() ? new Date() : new Date(`${date}T12:00:00`)).toISOString(),
+      description: `${p.card.name} bill`,
+      accountId: fromId,
+      toAccountId: p.card.id,
+      tags: [],
+    });
+    onClose();
+  }
+
+  return (
+    <Modal open onClose={onClose} title={`Pay ${p.card.name} bill`}>
+      <div className="space-y-3">
+        <p className="text-xs text-muted">
+          Outstanding: <b className="text-ink">{formatINR(p.outstanding)}</b>. Paying the bill isn't counted as spending — your card purchases already were.
+        </p>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Amount (₹)"><Input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>
+          <Field label="Paid on"><Input type="date" value={date} max={todayDateInput()} onChange={(e) => setDate(e.target.value)} /></Field>
+        </div>
+        <Field label="Paid from">
+          <Select value={fromId} onChange={(e) => setFromId(e.target.value)}>
+            <option value="">Select account…</option>
+            {banks.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </Select>
+        </Field>
+        {error && <p className="rounded-xl bg-danger/10 px-3 py-2 text-xs font-medium text-danger">{error}</p>}
+        <div className="flex gap-2 pt-1">
+          <Btn variant="ghost" onClick={onClose} className="flex-1 sm:flex-none">Cancel</Btn>
+          <Btn onClick={pay} className="flex-1 py-2.5 sm:ml-auto sm:flex-none"><Check size={15} /> Pay {formatINR(toPaise(amount) || 0)}</Btn>
         </div>
       </div>
     </Modal>

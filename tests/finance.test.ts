@@ -184,3 +184,14 @@ test("sync: subscription payment method is mapped to the cloud and back", () => 
   assert.equal(remote.payment_method_id, "pm-1");
   assert.equal(__test.toLocal("subscriptions", remote).paymentMethodId, "pm-1");
 });
+
+test("a settled loan no longer counts as owed, even if not fully repaid (written off)", () => {
+  const loan: Loan = { id: "L9", personName: "Kiran", direction: "lent", amount: 0, status: "settled", createdAt: now };
+  const txns = [
+    txn({ type: "lend", amount: 5_000_00, accountId: "bank", loanId: "L9" }),
+    txn({ type: "lend_repayment", amount: 3_000_00, accountId: "bank", loanId: "L9" }),
+  ];
+  const [s] = loanSummaries([loan], txns);
+  assert.equal(s.outstanding, 0);
+  assert.equal(netWorth([bank], computeBalances([bank], txns), [loan], txns).lentOutstanding, 0);
+});

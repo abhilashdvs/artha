@@ -4,12 +4,12 @@ import { useMemo, useState } from "react";
 import { useAccounts, useCategories, useLoans, usePaymentMethods, useTxns } from "@/lib/hooks";
 import { addLoan, addTxn, deleteLoan, updateLoan } from "@/lib/db";
 import { loanSummaries, loanTransactions } from "@/lib/finance";
-import { formatINR } from "@/lib/money";
-import { fmtDay } from "@/lib/dates";
+import { formatINR, toPaise } from "@/lib/money";
+import { fmtDay, todayDateInput } from "@/lib/dates";
 import { Badge, Btn, Card, CardTitle, Empty, Field, Input, Modal, Select, Textarea } from "@/components/ui";
 import { TxnForm } from "@/components/TxnForm";
 import { cn } from "@/lib/utils";
-import type { Loan } from "@/lib/types";
+import type { Account, Loan, LoanSummary } from "@/lib/types";
 import { differenceInDays, parseISO } from "date-fns";
 import { CheckCircle2, HandCoins, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react";
 
@@ -23,6 +23,7 @@ export default function LendingPage() {
   const [repayFor, setRepayFor] = useState<Loan | null>(null);
   const [historyFor, setHistoryFor] = useState<Loan | null>(null);
   const [delLoan, setDelLoan] = useState<Loan | null>(null);
+  const [settleFor, setSettleFor] = useState<LoanSummary | null>(null);
 
   const summaries = useMemo(() => (loans && txns ? loanSummaries(loans, txns) : []), [loans, txns]);
 
@@ -82,7 +83,7 @@ export default function LendingPage() {
                       onRepay={() => setRepayFor(s.loan)}
                       onEdit={() => setLoanModal(s.loan)}
                       onHistory={() => setHistoryFor(s.loan)}
-                      onSettle={() => updateLoan(s.loan.id, { status: "settled" })}
+                      onSettle={() => setSettleFor(s)}
                       onDelete={() => setDelLoan(s.loan)}
                     />
                   ))}
@@ -112,7 +113,8 @@ export default function LendingPage() {
         </>
       )}
 
-      <LoanModal open={loanModal !== null} initial={loanModal === "new" ? null : loanModal} onClose={() => setLoanModal(null)} />
+      <LoanModal open={loanModal !== null} initial={loanModal === "new" ? null : loanModal} accounts={accounts ?? []} onClose={() => setLoanModal(null)} />
+      <SettleModal s={settleFor} accounts={accounts ?? []} onClose={() => setSettleFor(null)} />
 
       {/* repayment modal */}
       <Modal
@@ -231,7 +233,11 @@ function LoanRow({
   );
 }
 
-function LoanModal({ open, initial, onClose }: { open: boolean; initial: Loan | null; onClose: () => void }) {
+function LoanModal({ open, initial, accounts, onClose }: { open: boolean; initial: Loan | null; accounts: Account[]; onClose: () => void }) {
+  const defaultAccount = () => accounts.find((a) => a.isActive && a.type === "bank")?.id ?? accounts.find((a) => a.isActive)?.id ?? "";
+  const [amount, setAmount] = useState("");
+  const [accountId, setAccountId] = useState(defaultAccount);
+  const [date, setDate] = useState(todayDateInput());
   const [name, setName] = useState(initial?.personName ?? "");
   const [direction, setDirection] = useState<"lent" | "borrowed">(initial?.direction ?? "lent");
   const [dueDate, setDueDate] = useState(initial?.dueDate ?? "");
@@ -245,6 +251,9 @@ function LoanModal({ open, initial, onClose }: { open: boolean; initial: Loan | 
     setDirection(initial?.direction ?? "lent");
     setDueDate(initial?.dueDate ?? "");
     setNotes(initial?.notes ?? "");
+    setAmount("");
+    setAccountId(defaultAccount());
+    setDate(todayDateInput());
     setError(null);
   }
 
@@ -252,9 +261,23 @@ function LoanModal({ open, initial, onClose }: { open: boolean; initial: Loan | 
     if (!name.trim()) return setError("Person's name is required.");
     if (initial) {
       await updateLoan(initial.id, { personName: name.trim(), direction, dueDate: dueDate || undefined, notes: notes || undefined });
-    } else {
-      await addLoan({ personName: name.trim(), direction, amount: 0, dueDate: dueDate || undefined, notes: notes || undefined, status: "open" });
+      return onClose();
     }
+    const amt = toPaise(amount);
+    if (amt <= 0) return setError("Enter how much you " + (direction === "lent" ? "lent" : "borrowed") + ".");
+    if (!accountId) return setError("Choose the account the money " + (direction === "lent" ? "came from" : "went into") + ".");
+    // create the person AND record the money movement, so the account balance and "Owed" are right
+    const loan = await addLoan({ personName: name.trim(), direction, amount: 0, dueDate: dueDate || undefined, notes: notes || undefined, status: "open" });
+    await addTxn({
+      type: direction === "lent" ? "lend" : "borrow",
+      amount: amt,
+      date: (date === todayDateInput() ? new Date() : new Date(`${date}T12:00:00`)).toISOString(),
+      description: direction === "lent" ? `Lent to ${name.trim()}` : `Borrowed from ${name.trim()}`,
+      accountId,
+      loanId: loan.id,
+      notes: notes || undefined,
+      tags: [],
+    });
     onClose();
   }
 
@@ -268,20 +291,104 @@ function LoanModal({ open, initial, onClose }: { open: boolean; initial: Loan | 
             <option value="borrowed">I borrowed from them</option>
           </Select>
         </Field>
+        {!initial && (
+          <>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label={direction === "lent" ? "How much you lent (₹)" : "How much you borrowed (₹)"}>
+                <Input inputMode="decimal" placeholder="0" value={amount} onChange={(e) => setAmount(e.target.value)} />
+              </Field>
+              <Field label="On">
+                <Input type="date" value={date} max={todayDateInput()} onChange={(e) => setDate(e.target.value)} />
+              </Field>
+            </div>
+            <Field label={direction === "lent" ? "Paid from" : "Received into"}>
+              <Select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
+                <option value="">Select account…</option>
+                {accounts.filter((a) => a.isActive).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </Select>
+            </Field>
+          </>
+        )}
         <Field label="Due date (optional)">
           <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
         </Field>
         <Field label="Notes (optional)"><Textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
-        {!initial && (
-          <p className="rounded-xl bg-accent/5 px-3 py-2 text-[11px] text-muted">
-            After adding the person, use Quick Add (+ button) → type "Lend Money" / "Borrow Money" to record the amount.
-          </p>
-        )}
+
         {error && <p className="rounded-xl bg-danger/10 px-3 py-2 text-xs font-medium text-danger">{error}</p>}
         <div className="flex justify-end gap-2">
           <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
           <Btn onClick={save}>{initial ? "Save" : "Add person"}</Btn>
         </div>
+      </div>
+    </Modal>
+  );
+}
+
+/**
+ * "Mark settled": either record the money that came back (so the account
+ * balance is right) or close the loan and forgive / write off the rest.
+ */
+function SettleModal({ s, accounts, onClose }: { s: LoanSummary | null; accounts: Account[]; onClose: () => void }) {
+  const [accountId, setAccountId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [key, setKey] = useState<string | null>(null);
+  if ((s?.loan.id ?? null) !== key) {
+    setKey(s?.loan.id ?? null);
+    setAccountId(accounts.find((a) => a.isActive && a.type === "bank")?.id ?? accounts.find((a) => a.isActive)?.id ?? "");
+  }
+  if (!s) return null;
+  const lent = s.loan.direction === "lent";
+  const who = s.loan.personName;
+
+  async function settle(withMoney: boolean) {
+    if (!s) return;
+    setBusy(true);
+    try {
+      if (withMoney) {
+        if (!accountId) return;
+        await addTxn({
+          type: lent ? "lend_repayment" : "borrow_repayment",
+          amount: s.outstanding,
+          date: new Date().toISOString(),
+          description: lent ? `Repayment from ${who}` : `Repaid ${who}`,
+          accountId,
+          loanId: s.loan.id,
+          tags: [],
+        });
+      }
+      await updateLoan(s.loan.id, { status: "settled" });
+      onClose();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose} title={`Settle with ${who}`}>
+      <div className="space-y-4">
+        <p className="text-sm text-muted">
+          {formatINR(s.outstanding)} is still {lent ? `owed to you by ${who}` : `owed by you to ${who}`}. What happened?
+        </p>
+        <div className="space-y-2 rounded-xl border border-border p-3">
+          <p className="text-sm font-medium text-ink">{lent ? `${who} paid back the rest` : `I paid ${who} back`}</p>
+          <Field label={lent ? "Money went into" : "Paid from"}>
+            <Select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
+              <option value="">Select account…</option>
+              {accounts.filter((a) => a.isActive).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </Select>
+          </Field>
+          <Btn className="w-full" disabled={busy || !accountId} onClick={() => settle(true)}>
+            <CheckCircle2 size={14} /> Record {formatINR(s.outstanding)} {lent ? "received" : "paid"} and settle
+          </Btn>
+        </div>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => settle(false)}
+          className="w-full rounded-xl px-3 py-2 text-xs text-muted hover:bg-cardhover hover:text-ink"
+        >
+          {lent ? "They won't pay the rest — forgive it and close" : "They forgave the rest — just close it"}
+        </button>
       </div>
     </Modal>
   );
