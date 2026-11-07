@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useAccounts, useCategories, usePaymentMethods, useSubscriptions } from "@/lib/hooks";
-import { addSubscription, deleteSubscription, updateSubscription } from "@/lib/db";
+import { addSubscription, addTxn, deleteSubscription, updateSubscription } from "@/lib/db";
 import { annualCost, radarLevel, subscriptionMonthlyCost, subscriptionYearlyCost, type RadarLevel } from "@/lib/finance";
 import { formatINR, toPaise } from "@/lib/money";
 import { fmtDay, todayDateInput } from "@/lib/dates";
@@ -10,7 +10,7 @@ import { Badge, Btn, Card, CardTitle, Empty, Field, Input, Modal, Select, catego
 import { cn } from "@/lib/utils";
 import type { Account, BillingCycle, Category, PaymentMethod, PaymentMethodType, Subscription } from "@/lib/types";
 import { addDays, addMonths, addYears, differenceInCalendarDays, format, parseISO, startOfToday } from "date-fns";
-import { CalendarClock, CreditCard, Pencil, Plus, Radar, Smartphone, Trash2, Wallet } from "lucide-react";
+import { CalendarClock, Check, CreditCard, Pencil, Plus, Radar, Smartphone, Trash2, Wallet } from "lucide-react";
 
 const CYCLE_LABEL: Record<BillingCycle, string> = {
   weekly: "Weekly", monthly: "Monthly", quarterly: "Quarterly", yearly: "Yearly",
@@ -60,6 +60,7 @@ export default function SubscriptionsPage() {
   const paymentMethods = usePaymentMethods();
   const [modal, setModal] = useState<Subscription | "new" | null>(null);
   const [delSub, setDelSub] = useState<Subscription | null>(null);
+  const [paySub, setPaySub] = useState<(Subscription & { due: string }) | null>(null);
 
   const derived = useMemo(() => {
     if (!subs) return null;
@@ -156,6 +157,17 @@ export default function SubscriptionsPage() {
                         <span className="sm:hidden">{CYCLE_LABEL[s.cycle]} · </span>
                         {cat?.name ?? "Uncategorised"} · {fmtDay(s.due)}
                       </p>
+                      <button
+                        onClick={() => setPaySub(s)}
+                        className={cn(
+                          "mt-2 inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium transition-colors active:scale-95",
+                          s.level === "clear"
+                            ? "border border-border text-muted hover:bg-cardhover hover:text-ink"
+                            : "bg-accent text-white hover:bg-accentstrong"
+                        )}
+                      >
+                        <Check size={13} /> Mark paid
+                      </button>
                     </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-3">
@@ -174,6 +186,8 @@ export default function SubscriptionsPage() {
           </ul>
         </Card>
       )}
+
+      <PayModal sub={paySub} accounts={accounts} paymentMethods={paymentMethods} onClose={() => setPaySub(null)} />
 
       <SubModal open={modal !== null} initial={modal === "new" ? null : modal} accounts={accounts} categories={categories} paymentMethods={paymentMethods} onClose={() => setModal(null)} />
 
@@ -306,6 +320,110 @@ function SubModal({
         <div className="flex justify-end gap-2">
           <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
           <Btn onClick={save}>{initial ? "Save" : "Add subscription"}</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/**
+ * "Mark paid": records the payment as a normal spend (so it shows in Activity,
+ * Home and category totals) and moves the subscription to its next due date.
+ */
+function PayModal({
+  sub, accounts, paymentMethods, onClose,
+}: {
+  sub: (Subscription & { due: string }) | null;
+  accounts: Account[];
+  paymentMethods: PaymentMethod[];
+  onClose: () => void;
+}) {
+  const [amount, setAmount] = useState("");
+  const [date, setDate] = useState(todayDateInput());
+  const [accountId, setAccountId] = useState("");
+  const [pmId, setPmId] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  // re-fill whenever a different subscription is opened (key-state pattern)
+  const [key, setKey] = useState<string | null>(null);
+  if ((sub?.id ?? null) !== key) {
+    setKey(sub?.id ?? null);
+    if (sub) {
+      setAmount(String(sub.amount / 100));
+      setDate(todayDateInput());
+      setAccountId(sub.accountId ?? accounts.find((a) => a.isActive && a.type === "bank")?.id ?? "");
+      setPmId(sub.paymentMethodId ?? "");
+      setError(null);
+    }
+  }
+  if (!sub) return null;
+  const next = advanceCycle(sub.due, sub.cycle);
+
+  async function confirm() {
+    if (!sub) return;
+    const amt = toPaise(amount);
+    if (amt <= 0) return setError("Enter the amount you paid.");
+    if (!accountId) return setError("Choose the account the money came from.");
+    setBusy(true);
+    try {
+      const now = new Date();
+      const when = date === todayDateInput() ? now : new Date(`${date}T12:00:00`);
+      await addTxn({
+        type: "expense",
+        amount: amt,
+        date: when.toISOString(),
+        description: sub.name,
+        merchant: sub.name,
+        categoryId: sub.categoryId,
+        accountId,
+        paymentMethodId: pmId || undefined,
+        tags: ["subscription"],
+      });
+      await updateSubscription(sub.id, { nextDueDate: next });
+      onClose();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose} title={`Mark ${sub.name} paid`}>
+      <div className="space-y-3">
+        <p className="text-xs text-muted">
+          Adds this payment to your spending, then moves {sub.name} to its next due date: <b className="text-ink">{fmtDay(next)}</b>.
+        </p>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Amount (₹)"><Input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>
+          <Field label="Paid on"><Input type="date" value={date} max={todayDateInput()} onChange={(e) => setDate(e.target.value)} /></Field>
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Field label="Paid using">
+            <Select
+              value={pmId}
+              onChange={(e) => {
+                setPmId(e.target.value);
+                const linked = paymentMethods.find((p) => p.id === e.target.value)?.linkedAccountId;
+                if (linked) setAccountId(linked);
+              }}
+            >
+              <option value="">Not set</option>
+              {paymentMethods.filter((p) => p.isActive).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </Select>
+          </Field>
+          <Field label="From account">
+            <Select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
+              <option value="">Select account…</option>
+              {accounts.filter((a) => a.isActive).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </Select>
+          </Field>
+        </div>
+        {error && <p className="rounded-xl bg-danger/10 px-3 py-2 text-xs font-medium text-danger">{error}</p>}
+        <div className="flex gap-2 pt-1">
+          <Btn variant="ghost" onClick={onClose} className="flex-1 sm:flex-none">Cancel</Btn>
+          <Btn onClick={confirm} disabled={busy} className="flex-1 py-2.5 sm:ml-auto sm:flex-none">
+            <Check size={15} /> {busy ? "Saving…" : `Paid ${formatINR(toPaise(amount) || 0)}`}
+          </Btn>
         </div>
       </div>
     </Modal>
