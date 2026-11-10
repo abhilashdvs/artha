@@ -64,6 +64,7 @@ export function TxnForm({
   const [notes, setNotes] = useState(initial?.notes ?? "");
   const [tagsStr, setTagsStr] = useState((initial?.tags ?? []).join(", "));
   const [error, setError] = useState<string | null>(null);
+  const saving = useRef(false);
   const [showMoreTypes, setShowMoreTypes] = useState(false);
   // optional fields stay folded away unless the transaction already uses them
   const [showDetails, setShowDetails] = useState(
@@ -125,6 +126,7 @@ export function TxnForm({
     setError(null);
     const amount = toPaise(amountStr);
     if (amount <= 0) return setError("Enter an amount greater than zero.");
+    if (amount > 100_000_000_00) return setError("That amount looks too big — check for an extra zero.");
     if (!accountId) return setError("Choose an account.");
     if (needsTo && !toAccountId) return setError("Choose the destination account.");
     if (needsTo && accountId === toAccountId) return setError("Source and destination accounts must be different.");
@@ -138,6 +140,9 @@ export function TxnForm({
       (needsCategory && categoryId ? categories.find((c) => c.id === categoryId)?.name : undefined) ||
       merchant.trim() ||
       TXN_TYPE_META[type].label;
+    // a fast double tap must not save the same transaction twice
+    if (saving.current) return;
+    saving.current = true;
     setBusy(true);
     try {
       await onSubmit({
@@ -156,6 +161,7 @@ export function TxnForm({
         tags: tagsStr.split(",").map((t) => t.trim()).filter(Boolean),
       });
     } finally {
+      saving.current = false;
       setBusy(false);
     }
   }

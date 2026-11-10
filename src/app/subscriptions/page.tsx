@@ -8,7 +8,7 @@ import { formatINR, toPaise } from "@/lib/money";
 import { fmtDay, todayDateInput } from "@/lib/dates";
 import { Badge, Btn, Card, CardTitle, Empty, Field, Input, Modal, Select, categoryOptions } from "@/components/ui";
 import { cn } from "@/lib/utils";
-import type { Account, BillingCycle, Category, PaymentMethod, PaymentMethodType, Subscription } from "@/lib/types";
+import type { Account, BillingCycle, Category, PaymentMethod, PaymentMethodType, Subscription, Txn } from "@/lib/types";
 import { addDays, addMonths, addYears, differenceInCalendarDays, format, parseISO, startOfToday } from "date-fns";
 import { CalendarClock, Check, CreditCard, Pencil, Plus, Radar, Smartphone, Trash2, Wallet } from "lucide-react";
 
@@ -77,10 +77,18 @@ export default function SubscriptionsPage() {
         const due = s.nextDueDate.slice(0, 10);
         const daysLeft = differenceInCalendarDays(parseISO(due), startOfToday());
         // the payment for the cycle just before this due date, if made with "Mark paid"
-        const prevDue = rewindCycle(due, s.cycle);
-        const lastPaid = txns
-          .filter((t) => t.tags?.includes(subTag(s.id)) && t.tags.includes(dueTag(prevDue)))
-          .sort((a, b) => b.date.localeCompare(a.date))[0];
+        // read the due date saved on the payment itself: stepping back a month from
+        // e.g. 28 Feb would give 28 Jan, not the 31 Jan that was actually paid
+        let prevDue = rewindCycle(due, s.cycle);
+        let lastPaid: Txn | undefined;
+        for (const t of txns) {
+          if (!t.tags?.includes(subTag(s.id))) continue;
+          const d = t.tags.find((x) => x.startsWith("due:"))?.slice(4);
+          if (d && advanceCycle(d, s.cycle) === due && (!lastPaid || t.date > lastPaid.date)) {
+            lastPaid = t;
+            prevDue = d;
+          }
+        }
         return { ...s, due, daysLeft, level: radarLevel(daysLeft), lastPaid, prevDue };
       })
       .sort((a, b) => a.daysLeft - b.daysLeft);
