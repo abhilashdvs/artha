@@ -116,8 +116,8 @@ export default function HomePage() {
       : [];
 
     const tips = isCurrent
-      ? generateInsights(txns, categories, budgets, loans)
-          .filter((i) => i.severity !== "info" || i.id === "top-category")
+      ? generateInsights(txns, categories, budgets, loans, subscriptions)
+          .filter((i) => i.severity !== "info" || ["food-delivery", "small-purchases", "top-category"].includes(i.id))
           .slice(0, 3)
       : [];
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useAccounts, useBudgets, useCategories, useLoans, useTxns } from "@/lib/hooks";
+import { useAccounts, useBudgets, useCategories, useLoans, useSubscriptions, useTxns } from "@/lib/hooks";
 import {
   categoryBreakdown, dayOfWeekSpend, fixedVariableSplit,
   merchantTotals, monthSeries, needsWantsSplit, spendingAverages,
@@ -12,6 +12,8 @@ import { filterByRange, rangeForPreset, type DatePreset, type DateRange } from "
 import { formatINR, pct } from "@/lib/money";
 import { Badge, Card, CardTitle, Empty } from "@/components/ui";
 import { DateFilter } from "@/components/DateFilter";
+import { SpendingCalendar } from "@/components/SpendingCalendar";
+import { WhatIf } from "@/components/WhatIf";
 import { DonutChart, HBarChart, ScoreLineChart, TrendChart } from "@/components/charts";
 import { cn } from "@/lib/utils";
 import { startOfMonth } from "date-fns";
@@ -25,6 +27,7 @@ export default function AnalyticsPage() {
   const accounts = useAccounts();
   const budgets = useBudgets();
   const loans = useLoans();
+  const subscriptions = useSubscriptions();
 
   const [preset, setPreset] = useState<DatePreset>("6m");
   const [custom, setCustom] = useState<DateRange>({ start: startOfMonth(new Date()), end: new Date() });
@@ -34,7 +37,7 @@ export default function AnalyticsPage() {
   const ranged = useMemo(() => (txns ? filterByRange(txns, range) : []), [txns, range]);
 
   const derived = useMemo(() => {
-    if (!txns || !categories || !accounts || !budgets || !loans) return null;
+    if (!txns || !categories || !accounts || !budgets || !loans || !subscriptions) return null;
     return {
       series: monthSeries(txns, 6),
       averages: spendingAverages(txns),
@@ -43,11 +46,11 @@ export default function AnalyticsPage() {
       dow: dayOfWeekSpend(ranged).sort((a, b) => DOW_ORDER.indexOf(a.day) - DOW_ORDER.indexOf(b.day)),
       fixedVar: fixedVariableSplit(ranged, categories),
       nw: needsWantsSplit(ranged, categories),
-      insights: generateInsights(txns, categories, budgets, loans),
+      insights: generateInsights(txns, categories, budgets, loans, subscriptions),
       scores: healthScoreHistory(6, { txns, budgets, accounts, loans, categories }),
       weights: activeWeights(),
     };
-  }, [txns, categories, accounts, budgets, loans, ranged]);
+  }, [txns, categories, accounts, budgets, loans, subscriptions, ranged]);
 
   if (!derived) return <div className="py-20 text-center text-sm text-muted">Loading…</div>;
 
@@ -80,6 +83,11 @@ export default function AnalyticsPage() {
             <p className="text-[10px] text-faint">based on {avgs.daysWithSpend} active days</p>
           </button>
         ))}
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-2 [&>*]:min-w-0">
+        <SpendingCalendar txns={txns ?? []} />
+        <WhatIf txns={txns ?? []} categories={categories ?? []} subscriptions={subscriptions ?? []} />
       </div>
 
       <div className="grid gap-4 xl:grid-cols-2">

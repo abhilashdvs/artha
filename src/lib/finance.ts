@@ -1,4 +1,4 @@
-import type { Account, Budget, Category, Loan, LoanSummary, Subscription, Txn } from "./types";
+import type { Account, Budget, Category, Goal, Loan, LoanSummary, Subscription, Txn } from "./types";
 import { monthKeyOf } from "./dates";
 import { format } from "date-fns";
 
@@ -250,4 +250,63 @@ export function radarLevel(daysLeft: number): RadarLevel {
   if (daysLeft < 3) return "red";
   if (daysLeft <= 10) return "yellow";
   return "clear";
+}
+
+// ── Budget helpers ────────────────────────────────────────────
+
+/** Alert stage for a budget at 50 / 75 / 90 / 100 % used. */
+export function budgetStage(pctUsed: number): { label: string; tone: "muted" | "accent" | "warn" | "danger" } {
+  if (pctUsed >= 100) return { label: "Over budget", tone: "danger" };
+  if (pctUsed >= 90) return { label: "Almost used up", tone: "warn" };
+  if (pctUsed >= 75) return { label: "75% used", tone: "warn" };
+  if (pctUsed >= 50) return { label: "Half used", tone: "accent" };
+  return { label: "On track", tone: "muted" };
+}
+
+/**
+ * A realistic monthly limit: the average of the last 3 complete months'
+ * spending (for a category incl. its sub-categories, or overall), rounded up
+ * to the next ₹500. Returns null when there's no history.
+ */
+export function suggestBudget(
+  txns: Txn[], categories: Category[], categoryId?: string, now = new Date(),
+): { average: number; suggested: number; months: number } | null {
+  const ids = categoryId
+    ? new Set([categoryId, ...categories.filter((c) => c.parentId === categoryId).map((c) => c.id)])
+    : null;
+  const totals: number[] = [];
+  for (let i = 1; i <= 3; i++) {
+    const key = format(new Date(now.getFullYear(), now.getMonth() - i, 1), "yyyy-MM");
+    const inMonth = txns.filter((t) => monthKeyOf(t.date) === key && (!ids || ids.has(t.categoryId ?? "")));
+    totals.push(Math.max(expenseTotal(inMonth), 0));
+  }
+  const withData = totals.filter((x) => x > 0);
+  if (withData.length === 0) return null;
+  const average = Math.round(withData.reduce((a, b) => a + b, 0) / withData.length);
+  const step = 500_00;
+  return { average, suggested: Math.ceil(average / step) * step, months: withData.length };
+}
+
+// ── Goals ─────────────────────────────────────────────────────
+
+export type GoalStatus = "done" | "on-track" | "behind" | "overdue" | "no-deadline";
+
+/**
+ * Is a goal on track? Compares what's saved with where you'd be if you saved
+ * evenly from the day the goal was created to its target date. Also gives the
+ * amount needed per month from now (at least one month, so it never vanishes).
+ */
+export function goalStatus(g: Goal, now = new Date()): { status: GoalStatus; monthlyNeeded: number | null; daysLeft: number | null } {
+  const left = Math.max(g.targetAmount - g.currentAmount, 0);
+  if (left === 0) return { status: "done", monthlyNeeded: null, daysLeft: null };
+  if (!g.targetDate) return { status: "no-deadline", monthlyNeeded: null, daysLeft: null };
+  const target = new Date(`${g.targetDate.slice(0, 10)}T23:59:59`);
+  const daysLeft = Math.ceil((target.getTime() - now.getTime()) / 86_400_000);
+  if (daysLeft < 0) return { status: "overdue", monthlyNeeded: left, daysLeft };
+  const monthsLeft = Math.max(1, Math.ceil(daysLeft / 30));
+  const monthlyNeeded = Math.ceil(left / monthsLeft);
+  const start = new Date(g.createdAt).getTime();
+  const total = target.getTime() - start;
+  const expected = total > 0 ? g.targetAmount * Math.min(1, (now.getTime() - start) / total) : g.targetAmount;
+  return { status: g.currentAmount >= expected * 0.9 ? "on-track" : "behind", monthlyNeeded, daysLeft };
 }

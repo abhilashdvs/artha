@@ -3,12 +3,12 @@
 import { useMemo, useState } from "react";
 import { useBudgets, useCategories, useTxns } from "@/lib/hooks";
 import { addBudget, deleteBudget, updateBudget } from "@/lib/db";
-import { budgetProgress } from "@/lib/finance";
+import { budgetProgress, budgetStage, suggestBudget } from "@/lib/finance";
 import { formatINR, pct, toPaise } from "@/lib/money";
 import { daysLeftInMonth } from "@/lib/dates";
 import { Badge, Btn, Card, Empty, Field, Input, Modal, Progress, Select, categoryOptions } from "@/components/ui";
 import { cn } from "@/lib/utils";
-import type { Budget, Category } from "@/lib/types";
+import type { Budget, Category, Txn } from "@/lib/types";
 import { Pencil, PiggyBank, Plus, Trash2 } from "lucide-react";
 
 export default function BudgetsPage() {
@@ -101,9 +101,14 @@ export default function BudgetsPage() {
                     <span className={p.pctUsed >= 100 ? "text-danger" : "text-ink"}>{formatINR(p.spent)}</span>
                     <span className="text-sm font-normal text-muted"> / {formatINR(p.budget.amount)}</span>
                   </p>
-                  <span className={cn("tnum text-xs font-semibold", p.pctUsed >= 100 ? "text-danger" : p.pctUsed >= 90 ? "text-warn" : "text-muted")}>
-                    {p.pctUsed.toFixed(0)}%
-                  </span>
+                  {(() => {
+                    const st = budgetStage(p.pctUsed);
+                    return (
+                      <span className={cn("tnum text-xs font-semibold", st.tone === "danger" ? "text-danger" : st.tone === "warn" ? "text-warn" : st.tone === "accent" ? "text-accent" : "text-muted")}>
+                        {p.pctUsed.toFixed(0)}% · {st.label}
+                      </span>
+                    );
+                  })()}
                 </div>
                 <div className="mt-2"><Progress value={p.pctUsed} /></div>
                 <div className="mt-2 flex justify-between text-[11px] text-muted">
@@ -116,7 +121,7 @@ export default function BudgetsPage() {
         </div>
       )}
 
-      <BudgetModal open={modal !== null} initial={modal === "new" ? null : modal} categories={expenseCats} onClose={() => setModal(null)} />
+      <BudgetModal open={modal !== null} initial={modal === "new" ? null : modal} categories={expenseCats} txns={txns ?? []} budgets={budgets} onClose={() => setModal(null)} />
 
       {/* delete confirm */}
       <Modal open={!!delBudget} onClose={() => setDelBudget(null)} title="Delete budget?">
@@ -139,8 +144,8 @@ export default function BudgetsPage() {
 }
 
 function BudgetModal({
-  open, initial, categories, onClose,
-}: { open: boolean; initial: Budget | null; categories: Category[]; onClose: () => void }) {
+  open, initial, categories, txns, budgets, onClose,
+}: { open: boolean; initial: Budget | null; categories: Category[]; txns: Txn[]; budgets: Budget[]; onClose: () => void }) {
   const [categoryId, setCategoryId] = useState(initial?.categoryId ?? "");
   const [amount, setAmount] = useState(initial ? String(initial.amount / 100) : "");
   const [error, setError] = useState<string | null>(null);
@@ -153,9 +158,14 @@ function BudgetModal({
     setError(null);
   }
 
+  const suggestion = useMemo(() => suggestBudget(txns, categories, categoryId || undefined), [txns, categories, categoryId]);
+
   async function save() {
     const amt = toPaise(amount);
     if (amt <= 0) return setError("Enter a monthly amount greater than zero.");
+    // one budget per category (and one overall budget)
+    const clash = budgets.find((b) => b.isActive && b.id !== initial?.id && (b.categoryId ?? "") === categoryId);
+    if (clash) return setError("There's already a budget for this — edit that one instead.");
     if (initial) {
       await updateBudget(initial.id, { amount: amt, categoryId: categoryId || undefined });
     } else {
@@ -176,6 +186,16 @@ function BudgetModal({
         <Field label="Monthly limit (₹)">
           <Input inputMode="decimal" placeholder="10000" value={amount} onChange={(e) => setAmount(e.target.value)} />
         </Field>
+        {suggestion && (
+          <div className="flex items-center justify-between gap-3 rounded-xl bg-accent/5 px-3 py-2 text-xs">
+            <span className="text-muted">
+              You spent about <b className="text-ink">{formatINR(suggestion.average)}</b>/month here over the last {suggestion.months} month{suggestion.months > 1 ? "s" : ""}.
+            </span>
+            <button type="button" onClick={() => setAmount(String(suggestion.suggested / 100))} className="shrink-0 font-semibold text-accent hover:underline">
+              Use {formatINR(suggestion.suggested)}
+            </button>
+          </div>
+        )}
         {error && <p className="rounded-xl bg-danger/10 px-3 py-2 text-xs font-medium text-danger">{error}</p>}
         <div className="flex justify-end gap-2">
           <Btn variant="ghost" onClick={onClose}>Cancel</Btn>

@@ -5,9 +5,10 @@ import assert from "node:assert/strict";
 import { format } from "date-fns";
 import {
   budgetProgress, computeBalances, expenseTotal, incomeTotal, loanSummaries, netWorth, savingsRateOf,
-  subscriptionMonthlyCost, subscriptionYearlyCost, radarLevel,
+  subscriptionMonthlyCost, subscriptionYearlyCost, radarLevel, budgetStage, suggestBudget, goalStatus,
 } from "../src/lib/finance";
 import { categoryBreakdown, needsWantsSplit } from "../src/lib/analytics";
+import { generateInsights } from "../src/lib/insights";
 import { formatINR, toPaise } from "../src/lib/money";
 import type { Account, Budget, Category, Loan, Subscription, Txn } from "../src/lib/types";
 import { __test } from "../src/lib/sync";
@@ -194,4 +195,72 @@ test("a settled loan no longer counts as owed, even if not fully repaid (written
   const [s] = loanSummaries([loan], txns);
   assert.equal(s.outstanding, 0);
   assert.equal(netWorth([bank], computeBalances([bank], txns), [loan], txns).lentOutstanding, 0);
+});
+
+test("insights: food delivery vs last month, savings tip, and small purchases", () => {
+  const thisMonth = new Date();
+  const lastMonth = new Date(thisMonth.getFullYear(), thisMonth.getMonth() - 1, 10, 12);
+  const at = (d: Date) => d.toISOString();
+  const txns: Txn[] = [
+    txn({ type: "expense", amount: 3_000_00, accountId: "bank", merchant: "Swiggy", date: at(lastMonth) }),
+    txn({ type: "expense", amount: 4_500_00, accountId: "bank", merchant: "Zomato", date: at(thisMonth) }),
+    ...Array.from({ length: 8 }, () => txn({ type: "expense", amount: 150_00, accountId: "bank", description: "tea", date: at(thisMonth) })),
+  ];
+  const ins = generateInsights(txns, cats, [], []);
+  const fd = ins.find((i) => i.id === "food-delivery");
+  assert.ok(fd, "food delivery insight");
+  assert.match(fd!.title, /₹4,500.*50% more/);
+  assert.match(fd!.action ?? "", /₹1,350 a month/); // exactly 30% of ₹4,500
+  const sp = ins.find((i) => i.id === "small-purchases");
+  assert.ok(sp, "small purchases insight");
+  assert.match(sp!.title, /₹1,200/);
+});
+
+test("insights: subscription yearly cost and lent vs repaid", () => {
+  const subs: Subscription[] = [
+    { id: "s1", name: "Netflix", amount: 649_00, cycle: "monthly", nextDueDate: "2026-12-01", isActive: true, createdAt: now },
+  ];
+  const loan: Loan = { id: "L5", personName: "Ravi", direction: "lent", amount: 0, status: "open", createdAt: now };
+  const txns = [
+    txn({ type: "lend", amount: 12_000_00, accountId: "bank", loanId: "L5" }),
+    txn({ type: "lend_repayment", amount: 5_000_00, accountId: "bank", loanId: "L5" }),
+  ];
+  const ins = generateInsights(txns, cats, [], [loan], subs);
+  assert.match(ins.find((i) => i.id === "subscriptions-cost")!.title, /₹649 a month — ₹7,788 a year/);
+  assert.match(ins.find((i) => i.id === "lent-vs-repaid")!.title, /lent ₹12,000, and ₹5,000 has been repaid/);
+});
+
+test("budgets: alert stages at 50 / 75 / 90 / 100 %", () => {
+  assert.equal(budgetStage(30).label, "On track");
+  assert.equal(budgetStage(50).label, "Half used");
+  assert.equal(budgetStage(80).label, "75% used");
+  assert.equal(budgetStage(95).label, "Almost used up");
+  assert.equal(budgetStage(120).label, "Over budget");
+});
+
+test("budgets: suggested limit = 3-month average incl. sub-categories, rounded up to ₹500", () => {
+  const now = new Date(2026, 10, 15); // 15 Nov 2026
+  const mid = (m: number) => new Date(2026, m, 10, 12).toISOString();
+  const txns = [
+    txn({ type: "expense", amount: 4_000_00, accountId: "bank", categoryId: "food", date: mid(9) }),   // Oct
+    txn({ type: "expense", amount: 2_000_00, accountId: "bank", categoryId: "swiggy", date: mid(8) }), // Sep (child)
+    txn({ type: "expense", amount: 9_999_00, accountId: "bank", categoryId: "food", date: mid(10) }),  // Nov — current month ignored
+  ];
+  const s = suggestBudget(txns, cats, "food", now)!;
+  assert.equal(s.months, 2);
+  assert.equal(s.average, 3_000_00);
+  assert.equal(s.suggested, 3_000_00);
+  assert.equal(suggestBudget([], cats, "food", now), null);
+});
+
+test("goals: on track, behind, overdue, and a per-month amount even with < 1 month left", () => {
+  const now = new Date(2026, 10, 15);
+  const base = { id: "g", name: "Bike", targetAmount: 120_000_00, isCompleted: false, createdAt: new Date(2026, 4, 15).toISOString() } as const;
+  // created 15 May, target 15 May 2027 → half the time gone; 60k saved = on track
+  assert.equal(goalStatus({ ...base, currentAmount: 60_000_00, targetDate: "2027-05-15" }, now).status, "on-track");
+  assert.equal(goalStatus({ ...base, currentAmount: 20_000_00, targetDate: "2027-05-15" }, now).status, "behind");
+  assert.equal(goalStatus({ ...base, currentAmount: 20_000_00, targetDate: "2026-11-01" }, now).status, "overdue");
+  const soon = goalStatus({ ...base, currentAmount: 110_000_00, targetDate: "2026-11-30" }, now);
+  assert.equal(soon.monthlyNeeded, 10_000_00);
+  assert.equal(goalStatus({ ...base, currentAmount: 120_000_00, targetDate: "2027-05-15" }, now).status, "done");
 });

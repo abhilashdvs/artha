@@ -123,6 +123,31 @@ export default function AccountsPage() {
         </div>
       )}
 
+      {/* archived accounts — visible and restorable */}
+      {accounts.some((a) => !a.isActive) && (
+        <details className="rounded-2xl border border-border bg-card px-4 py-3">
+          <summary className="cursor-pointer text-sm font-medium text-muted">
+            Archived accounts ({accounts.filter((a) => !a.isActive).length})
+          </summary>
+          <ul className="mt-2 divide-y divide-border">
+            {accounts.filter((a) => !a.isActive).map((a) => {
+              const bal = balances.get(a.id) ?? a.openingBalance;
+              return (
+                <li key={a.id} className="flex items-center justify-between gap-3 py-2">
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm text-ink">{a.name}</span>
+                    <span className="block text-[11px] text-muted">
+                      {a.type === "credit_card" ? `${formatINR(ccOutstanding(bal))} outstanding` : `${formatINR(bal)} balance`} · not counted in totals
+                    </span>
+                  </span>
+                  <Btn size="sm" variant="outline" onClick={() => updateAccount(a.id, { isActive: true })}>Restore</Btn>
+                </li>
+              );
+            })}
+          </ul>
+        </details>
+      )}
+
       {/* payment methods */}
       <div className="flex items-center justify-between">
         <div>
@@ -169,9 +194,19 @@ export default function AccountsPage() {
         {archiveAcct && (
           <div className="space-y-4">
             <p className="text-sm text-muted">
-              Archive <b className="text-ink">{archiveAcct.name}</b>? It will be hidden everywhere, but its
-              transactions and history are kept. You can re-enable it later by editing.
+              Archive <b className="text-ink">{archiveAcct.name}</b>? It will be hidden and left out of your totals.
+              Its transactions and history are kept, and you can restore it any time from "Archived accounts".
             </p>
+            {(() => {
+              const bal = balances.get(archiveAcct.id) ?? archiveAcct.openingBalance;
+              const left = archiveAcct.type === "credit_card" ? ccOutstanding(bal) : bal;
+              return left !== 0 ? (
+                <p className="rounded-xl bg-warn/10 px-3 py-2 text-xs text-warn">
+                  It still has {formatINR(Math.abs(left))} {archiveAcct.type === "credit_card" ? "outstanding" : "in it"} — that amount will
+                  disappear from your totals. Move the money (or pay the card) first if it's still in use.
+                </p>
+              ) : null;
+            })()}
             <div className="flex justify-end gap-2">
               <Btn variant="ghost" onClick={() => setArchiveAcct(null)}>Cancel</Btn>
               <Btn variant="danger" onClick={async () => { await updateAccount(archiveAcct.id, { isActive: false }); setArchiveAcct(null); }}>

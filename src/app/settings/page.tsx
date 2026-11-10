@@ -11,6 +11,7 @@ import { AlertTriangle, Download, Sparkles, Trash2 } from "lucide-react";
 import { AccountSync } from "@/components/AccountSync";
 import { InstallApp } from "@/components/InstallApp";
 import { FeatureToggle } from "@/components/FeatureToggle";
+import { BackupCard } from "@/components/BackupCard";
 import { isSignedIn, wipeCloud } from "@/lib/sync";
 
 export default function SettingsPage() {
@@ -32,6 +33,8 @@ export default function SettingsPage() {
       <InstallApp />
 
       <FeatureToggle />
+
+      <BackupCard />
 
       <Card>
         <CardTitle title="Demo Mode" sub="Explore with realistic sample data" />
@@ -56,12 +59,6 @@ export default function SettingsPage() {
               <Trash2 size={14} /> {busy ? "Removing…" : "Remove demo data"}
             </Btn>
           )}
-          <Btn
-            variant="ghost"
-            onClick={async () => txns && downloadFile(`artha-backup-${format(new Date(), "yyyy-MM-dd")}.csv`, await exportTxnsCsv(txns))}
-          >
-            <Download size={14} /> Backup all transactions
-          </Btn>
         </div>
       </Card>
 

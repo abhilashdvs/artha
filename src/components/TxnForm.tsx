@@ -132,14 +132,19 @@ export function TxnForm({
     const parsedDate = new Date(date);
     if (isNaN(parsedDate.getTime())) return setError("Pick a valid date & time.");
     if (needsLoan && !loanId) return setError("Link this to a person/loan. Create one on the Lending page first.");
-    if (!description.trim()) return setError("Add a short description (what was it for?).");
+    // no description? use the category (or merchant / type) so saving is quick
+    const label =
+      description.trim() ||
+      (needsCategory && categoryId ? categories.find((c) => c.id === categoryId)?.name : undefined) ||
+      merchant.trim() ||
+      TXN_TYPE_META[type].label;
     setBusy(true);
     try {
       await onSubmit({
         type,
         amount,
         date: parsedDate.toISOString(),
-        description: description.trim(),
+        description: label,
         merchant: merchant.trim() || undefined,
         categoryId: needsCategory && categoryId ? categoryId : undefined,
         accountId,
@@ -223,7 +228,7 @@ export function TxnForm({
         />
       </div>
 
-      <Field label="What was it for?">
+      <Field label="What was it for? (optional)">
         <Input placeholder={type === "income" ? "e.g. Salary" : "e.g. Dinner at Truffles"} value={description} onChange={(e) => setDescription(e.target.value)} />
       </Field>
 

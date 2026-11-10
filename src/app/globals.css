@@ -50,3 +50,17 @@ html, body {
 
 /* tabular numbers for money columns */
 .tnum { font-variant-numeric: tabular-nums; }
+
+/* Reports → "Save as PDF": print only the page content, on white */
+@media print {
+  :root, .dark {
+    color-scheme: light;
+    --bg: #ffffff; --card: #ffffff; --cardhover: #f3f5f4; --border: #e3e8e5;
+    --ink: #10201b; --muted: #5b6a64; --faint: #8a9690;
+  }
+  html, body { background: #fff !important; }
+  aside, nav.fixed, button, [role="dialog"] { display: none !important; }
+  main { padding: 0 !important; }
+  .shadow-card { box-shadow: none !important; }
+  .rounded-2xl { break-inside: avoid; }
+}

@@ -4,12 +4,12 @@ import { useState } from "react";
 import { useAccounts, useCategories, useGoals, usePaymentMethods } from "@/lib/hooks";
 import { addGoal, addTxn, deleteGoal, updateGoal } from "@/lib/db";
 import { formatINR, pct, toPaise } from "@/lib/money";
+import { goalStatus } from "@/lib/finance";
 import { fmtDay } from "@/lib/dates";
 import { Badge, Btn, Card, Empty, Field, Input, Modal, Progress, Textarea } from "@/components/ui";
 import { TxnForm } from "@/components/TxnForm";
 import { cn } from "@/lib/utils";
 import type { Goal } from "@/lib/types";
-import { differenceInMonths, parseISO } from "date-fns";
 import { CheckCircle2, Pencil, Plus, Target, Trash2 } from "lucide-react";
 
 export default function GoalsPage() {
@@ -48,9 +48,8 @@ export default function GoalsPage() {
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {open.map((g) => {
             const p = pct(g.currentAmount, g.targetAmount);
-            const monthsLeft = g.targetDate ? differenceInMonths(parseISO(g.targetDate), new Date()) : null;
-            const monthlyNeeded =
-              monthsLeft !== null && monthsLeft > 0 ? Math.ceil((g.targetAmount - g.currentAmount) / monthsLeft) : null;
+            const gs = goalStatus(g);
+            const monthlyNeeded = gs.monthlyNeeded;
             return (
               <Card key={g.id}>
                 <div className="flex items-start justify-between gap-2">
@@ -74,7 +73,10 @@ export default function GoalsPage() {
                 <div className="mt-2"><Progress value={p} color="var(--violet)" /></div>
                 <div className="mt-2 flex items-center justify-between text-[11px] text-muted">
                   <span className={cn("font-semibold", p >= 100 ? "text-good" : "text-accent")}>{p.toFixed(0)}%</span>
-                  {monthlyNeeded !== null && p < 100 && <span>needs ≈ {formatINR(monthlyNeeded)}/mo</span>}
+                  {gs.status === "on-track" && <span className="font-medium text-good">On track</span>}
+                  {gs.status === "behind" && <span className="font-medium text-warn">Behind</span>}
+                  {gs.status === "overdue" && <span className="font-medium text-danger">Past target date</span>}
+                  {monthlyNeeded !== null && gs.status !== "overdue" && <span>save ≈ {formatINR(monthlyNeeded)}/mo</span>}
                 </div>
                 <div className="mt-3 flex gap-2">
                   <Btn size="sm" variant="outline" onClick={() => setContributeFor(g)}>Contribute</Btn>

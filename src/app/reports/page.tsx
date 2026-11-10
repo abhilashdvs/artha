@@ -11,7 +11,7 @@ import { Btn, Card, CardTitle } from "@/components/ui";
 import { DateFilter } from "@/components/DateFilter";
 import { downloadFile } from "@/lib/utils";
 import { parseISO, startOfMonth, format } from "date-fns";
-import { Download } from "lucide-react";
+import { Download, Printer } from "lucide-react";
 import type { Txn } from "@/lib/types";
 
 export default function ReportsPage() {
@@ -68,9 +68,12 @@ export default function ReportsPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Reports</h1>
-          <p className="text-sm text-muted">Export your data as CSV — opens in Excel / Google Sheets</p>
+          <p className="text-sm text-muted">Save as PDF, or export CSV for Excel / Google Sheets</p>
         </div>
-        <DateFilter preset={preset} onChange={setPreset} custom={custom} onCustomChange={setCustom} />
+        <div className="flex flex-wrap items-center gap-2 print:hidden">
+          <DateFilter preset={preset} onChange={setPreset} custom={custom} onCustomChange={setCustom} />
+          <Btn onClick={() => window.print()}><Printer size={14} /> Save as PDF</Btn>
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
