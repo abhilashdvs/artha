@@ -190,3 +190,9 @@ begin
     execute format('create index if not exists %I on public.%I (user_id, updated_at)', t || '_user_updated_idx', t);
   end loop;
 end $$;
+
+-- Daily keep-alive ping (see src/app/api/keepalive). Touches no user data.
+create or replace function public.artha_keepalive()
+returns boolean language sql stable security invoker set search_path = '' as $$ select true $$;
+revoke all on function public.artha_keepalive() from public;
+grant execute on function public.artha_keepalive() to anon;
